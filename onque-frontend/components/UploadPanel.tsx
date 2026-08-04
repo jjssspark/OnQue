@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { summarizeCall, summarizeDocument, type SummaryResponse } from '@/lib/api';
-import { addHistoryEntry, type HistoryEntryType } from '@/lib/history';
 
-const SUMMARIZE_FN: Record<HistoryEntryType, (file: File) => Promise<SummaryResponse>> = {
+type UploadKind = 'call' | 'document';
+
+const SUMMARIZE_FN: Record<UploadKind, (file: File) => Promise<SummaryResponse>> = {
   call: summarizeCall,
   document: summarizeDocument,
 };
@@ -12,7 +13,7 @@ const SUMMARIZE_FN: Record<HistoryEntryType, (file: File) => Promise<SummaryResp
 type UploadPanelProps = {
   accept: string;
   acceptHint: string;
-  historyType: HistoryEntryType;
+  historyType: UploadKind;
   submitLabel: string;
   loadingLabel: string;
   loadingHint: string;
@@ -51,11 +52,6 @@ export function UploadPanel({
     try {
       const data = await SUMMARIZE_FN[historyType](file);
       setSummary(data);
-      addHistoryEntry({
-        type: historyType,
-        filename: data.filename,
-        summary: data.summary,
-      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '요약 처리 중 오류가 발생했습니다.';
       setErrorMsg(message);
@@ -106,9 +102,12 @@ export function UploadPanel({
         <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-bold text-foreground">📝 요약 리포트</h2>
-            <span className="font-mono text-xs text-foreground/40">
-              {summary.filename}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-semibold text-brand">
+                {summary.category}
+              </span>
+              <span className="font-mono text-xs text-foreground/40">{summary.filename}</span>
+            </div>
           </div>
           <hr className="my-4 border-border" />
           <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">

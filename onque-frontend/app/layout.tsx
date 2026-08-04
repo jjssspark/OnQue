@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
 import { MobileNav } from "@/components/MobileNav";
+import { SmartDashboardPanel } from "@/components/SmartDashboardPanel";
+import { WorkspaceProvider } from "@/components/WorkspaceContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,13 +31,16 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <div className="flex min-h-screen flex-1 flex-col">
-            <MobileNav />
-            <main className="flex-1 overflow-y-auto">{children}</main>
+        <WorkspaceProvider>
+          <div className="flex min-h-screen">
+            <Sidebar />
+            <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+              <MobileNav />
+              <main className="flex-1 overflow-y-auto">{children}</main>
+            </div>
+            <SmartDashboardPanel />
           </div>
-        </div>
+        </WorkspaceProvider>
       </body>
     </html>
   );

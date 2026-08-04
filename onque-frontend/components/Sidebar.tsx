@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
+import { useWorkspace } from '@/components/WorkspaceContext';
 
 type NavItem = {
   href: string;
@@ -40,6 +41,14 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: '/chat',
+    label: '팀 채팅',
+    description: '@비서에게 물어보기',
+    icon: (
+      <path d="M4 5h16v11H8l-4 4V5Z" />
+    ),
+  },
+  {
     href: '/history',
     label: '이력 조회',
     description: '지난 요약 검색',
@@ -54,6 +63,8 @@ const NAV_ITEMS: NavItem[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { todos } = useWorkspace();
+  const openTodoCount = todos.filter((t) => !t.is_done).length;
 
   return (
     <aside className="hidden md:flex w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground">
@@ -94,12 +105,17 @@ export function Sidebar() {
               >
                 {item.icon}
               </svg>
-              <span className="flex flex-col">
+              <span className="flex flex-1 flex-col">
                 <span className="text-sm font-semibold">{item.label}</span>
                 <span className="text-[11px] text-sidebar-foreground/50">
                   {item.description}
                 </span>
               </span>
+              {item.href === '/' && openTodoCount > 0 && (
+                <span className="mt-0.5 shrink-0 rounded-full bg-brand px-1.5 py-0.5 text-[10px] font-bold text-brand-foreground">
+                  {openTodoCount}
+                </span>
+              )}
             </Link>
           );
         })}

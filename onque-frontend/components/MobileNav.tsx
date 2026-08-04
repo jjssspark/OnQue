@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { href: '/', label: '대시보드' },
   { href: '/calls', label: '통화 요약' },
   { href: '/documents', label: '문서·회의록' },
+  { href: '/chat', label: '팀 채팅' },
   { href: '/history', label: '이력 조회' },
 ];
 

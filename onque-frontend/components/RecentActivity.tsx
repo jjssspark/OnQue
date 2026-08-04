@@ -2,18 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getHistory, type HistoryEntry } from '@/lib/history';
-
-const TYPE_LABEL: Record<HistoryEntry['type'], string> = {
-  call: '통화 요약',
-  document: '문서·회의록',
-};
+import { getDocuments, type DocumentRecord } from '@/lib/api';
 
 export function RecentActivity() {
-  const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
+  const [entries, setEntries] = useState<DocumentRecord[] | null>(null);
 
   useEffect(() => {
-    setEntries(getHistory().slice(0, 5));
+    getDocuments()
+      .then((docs) => setEntries(docs.slice(0, 5)))
+      .catch(() => setEntries([]));
   }, []);
 
   if (entries === null) return null;
@@ -38,10 +35,10 @@ export function RecentActivity() {
             <p className="truncate text-sm font-semibold text-foreground">
               {entry.filename}
             </p>
-            <p className="text-xs text-foreground/40">{TYPE_LABEL[entry.type]}</p>
+            <p className="text-xs text-foreground/40">{entry.category}</p>
           </div>
           <span className="shrink-0 font-mono text-[11px] text-foreground/40">
-            {new Date(entry.createdAt).toLocaleDateString('ko-KR')}
+            {new Date(entry.created_at).toLocaleDateString('ko-KR')}
           </span>
         </Link>
       ))}

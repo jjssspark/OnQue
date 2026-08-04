@@ -15,6 +15,12 @@ const MODULES = [
     description: 'PDF, 텍스트 문서를 업로드하면 핵심 내용과 액션 아이템을 정리합니다.',
   },
   {
+    href: '/chat',
+    emoji: '💬',
+    title: '팀 채팅',
+    description: '@비서와 대화하면 할 일·일정이 자동으로 정리됩니다.',
+  },
+  {
     href: '/history',
     emoji: '🔍',
     title: '이력 조회',
@@ -34,7 +40,7 @@ export default function DashboardPage() {
         아래에서 필요한 업무를 바로 시작하세요.
       </p>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-3">
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {MODULES.map((mod) => (
           <Link
             key={mod.href}
