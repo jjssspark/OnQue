@@ -6,6 +6,8 @@ type SummaryResponse = {
   summary: string;
 };
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000';
+
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
@@ -31,7 +33,7 @@ export default function Home() {
     setErrorMsg('');
 
     try {
-      const res = await fetch('http://127.0.0.1:8000/summarize-call', {
+      const res = await fetch(`${API_BASE_URL}/summarize-call`, {
         method: 'POST',
         body: formData,
       });
