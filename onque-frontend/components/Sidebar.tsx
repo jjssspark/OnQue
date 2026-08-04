@@ -1,0 +1,115 @@
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import type { ReactNode } from 'react';
+
+type NavItem = {
+  href: string;
+  label: string;
+  description: string;
+  icon: ReactNode;
+};
+
+const NAV_ITEMS: NavItem[] = [
+  {
+    href: '/',
+    label: '대시보드',
+    description: '업무 현황 한눈에',
+    icon: (
+      <path d="M3 11.5 12 4l9 7.5M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9" />
+    ),
+  },
+  {
+    href: '/calls',
+    label: '통화 요약',
+    description: '녹음 파일 → 콜 리포트',
+    icon: (
+      <path d="M4 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L14 13l5 2v4a2 2 0 0 1-2 2C9.2 21 3 14.8 3 7a2 2 0 0 1 1-1Z" />
+    ),
+  },
+  {
+    href: '/documents',
+    label: '문서·회의록 요약',
+    description: 'PDF/텍스트 → 핵심 정리',
+    icon: (
+      <>
+        <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+        <path d="M14 3v5h5M9 13h6M9 17h6M9 9h2" />
+      </>
+    ),
+  },
+  {
+    href: '/history',
+    label: '이력 조회',
+    description: '지난 요약 검색',
+    icon: (
+      <>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.2-3.2M11 8v3l2 2" />
+      </>
+    ),
+  },
+];
+
+export function Sidebar() {
+  const pathname = usePathname();
+
+  return (
+    <aside className="hidden md:flex w-64 shrink-0 flex-col bg-sidebar text-sidebar-foreground">
+      <div className="px-6 py-7 border-b border-white/10">
+        <p className="text-xs font-mono tracking-widest text-white/40 uppercase">
+          Workspace
+        </p>
+        <h1 className="mt-1 text-xl font-bold text-white">
+          On<span className="text-brand">Que</span>
+        </h1>
+      </div>
+
+      <nav className="flex-1 px-3 py-5 space-y-1">
+        {NAV_ITEMS.map((item) => {
+          const isActive =
+            item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`group flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors ${
+                isActive
+                  ? 'bg-white/10 text-white'
+                  : 'text-sidebar-foreground hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.8}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={`mt-0.5 h-5 w-5 shrink-0 ${
+                  isActive ? 'text-brand' : 'text-sidebar-foreground/70 group-hover:text-white'
+                }`}
+              >
+                {item.icon}
+              </svg>
+              <span className="flex flex-col">
+                <span className="text-sm font-semibold">{item.label}</span>
+                <span className="text-[11px] text-sidebar-foreground/50">
+                  {item.description}
+                </span>
+              </span>
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="px-6 py-5 border-t border-white/10">
+        <p className="text-[11px] font-mono text-sidebar-foreground/40">
+          Gemini AI 기반 업무 자동화
+        </p>
+      </div>
+    </aside>
+  );
+}
