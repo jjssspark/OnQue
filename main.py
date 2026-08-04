@@ -4,7 +4,7 @@ import tempfile
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
 
 # .env 에서 GOOGLE_API_KEY 읽기
 load_dotenv()
@@ -14,7 +14,7 @@ if not GOOGLE_API_KEY:
     raise RuntimeError("GOOGLE_API_KEY 환경변수가 설정되어 있지 않습니다.")
 
 # Gemini API 설정
-genai.configure(api_key=GOOGLE_API_KEY)
+client = genai.Client(api_key=GOOGLE_API_KEY)
 
 app = FastAPI()
 
@@ -59,7 +59,7 @@ async def summarize_call(file: UploadFile = File(...)):
 
     try:
         # 3) Gemini에 파일 업로드
-        uploaded_file = genai.upload_file(path=temp_path)
+        uploaded_file = client.files.upload(file=temp_path)
 
         # 요약 프롬프트
         prompt = """
@@ -99,10 +99,11 @@ async def summarize_call(file: UploadFile = File(...)):
 """
 
 
-        model = genai.GenerativeModel("gemini-2.5-flash")
-
         # 🔥 업로드된 파일 객체 + 프롬프트를 함께 전달
-        response = model.generate_content([uploaded_file, prompt])
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[uploaded_file, prompt],
+        )
 
         summary_text = getattr(response, "text", "").strip()
 

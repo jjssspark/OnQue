@@ -1,5 +1,5 @@
 fastapi==0.121.2
 uvicorn==0.38.0
 python-dotenv==1.2.1
-google-generativeai==0.8.5
+google-genai==2.16.0
 python-multipart==0.0.20
