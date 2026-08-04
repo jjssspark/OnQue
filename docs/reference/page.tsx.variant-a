@@ -1,0 +1,141 @@
+'use client';
+
+import { useState } from 'react';
+
+type SummaryResponse = {
+  filename: string;
+  summary: string;
+};
+
+export default function Home() {
+  const [file, setFile] = useState<File | null>(null);
+  const [summary, setSummary] = useState<SummaryResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+      setSummary(null);
+      setErrorMsg('');
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!file) {
+      alert('통화 녹음 파일을 먼저 선택해주세요!');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    setLoading(true);
+    setSummary(null);
+    setErrorMsg('');
+
+    try {
+      const res = await fetch('http://127.0.0.1:8000/summarize-call', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.detail || '요청 실패');
+      }
+
+      const data: SummaryResponse = await res.json();
+      setSummary(data);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(err.message || '요약 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-lg p-8">
+        {/* 헤더 */}
+        <div className="flex flex-col gap-2 mb-6">
+          <h1 className="text-2xl md:text-3xl font-bold text-slate-900">
+            📞 OnQue 통화 요약 파일럿
+          </h1>
+          <p className="text-slate-500 text-sm md:text-base">
+            통화 녹음 파일(mp3, m4a, wav)을 업로드하면
+            <span className="font-semibold"> Gemini AI</span>가 내용을 자동으로
+            요약해줍니다.
+          </p>
+        </div>
+
+        {/* 업로드 카드 */}
+        <div className="border border-slate-200 rounded-2xl p-6 mb-6 bg-slate-50">
+          <label className="block text-sm font-semibold text-slate-700 mb-2">
+            1. 통화 녹음 파일 선택
+          </label>
+          <div className="flex flex-col md:flex-row items-start md:items-center gap-3">
+            <input
+              type="file"
+              accept=".mp3,.m4a,.wav"
+              onChange={handleFileChange}
+              className="w-full md:w-auto cursor-pointer border border-dashed border-slate-300 rounded-lg p-2 bg-white text-sm"
+            />
+            {file && (
+              <span className="text-xs md:text-sm text-slate-600 bg-white px-3 py-1 rounded-full border border-slate-200">
+                선택된 파일: <span className="font-medium">{file.name}</span>
+              </span>
+            )}
+          </div>
+
+          <button
+            onClick={handleUpload}
+            disabled={loading || !file}
+            className={`mt-4 w-full md:w-auto px-4 py-2.5 rounded-lg text-sm font-semibold text-white transition
+              ${
+                loading || !file
+                  ? 'bg-slate-400 cursor-not-allowed'
+                  : 'bg-blue-500 hover:bg-blue-600'
+              }`}
+          >
+            {loading
+              ? 'AI가 통화 내용을 분석 중입니다...'
+              : '2. 요약 시작하기 ✨'}
+          </button>
+
+          {errorMsg && (
+            <p className="mt-3 text-sm text-red-500">⚠ {errorMsg}</p>
+          )}
+        </div>
+
+        {/* 요약 결과 카드 */}
+        {summary && (
+          <div className="mt-6 border border-slate-200 rounded-2xl p-6 bg-white">
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="text-lg font-bold text-slate-900">
+                📝 요약 리포트
+              </h2>
+              <span className="text-xs text-slate-400">
+                파일: {summary.filename}
+              </span>
+            </div>
+
+            <div className="h-px bg-slate-200 mb-4" />
+
+            <pre className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">
+              {summary.summary}
+            </pre>
+          </div>
+        )}
+
+        {/* 로딩 중일 때 힌트 */}
+        {loading && (
+          <p className="mt-4 text-xs text-slate-500">
+            👉 통화 길이에 따라 10~30초 정도 걸릴 수 있습니다.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
