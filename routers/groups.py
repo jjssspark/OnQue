@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from auth import get_current_user
 from db import get_db
-from models import Group, GroupMembership, User
+from models import DEFAULT_CHAT_ROOM_NAME, ChatRoom, Group, GroupMembership, User
 
 router = APIRouter(prefix="/api/v1", tags=["groups"])
 
@@ -46,6 +46,11 @@ def create_group(
     db.commit()
     db.refresh(group)
     db.add(GroupMembership(user_id=current_user.id, group_id=group.id))
+    db.add(
+        ChatRoom(
+            group_id=group.id, name=DEFAULT_CHAT_ROOM_NAME, created_by=current_user.id
+        )
+    )
     db.commit()
     return {"success": True, "data": {"id": group.id, "name": group.name}, "error": None}
 

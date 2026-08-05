@@ -255,7 +255,7 @@ export function UploadPanel({
           </div>
 
           {summary.created_todos.length > 0 && (
-            <p className="mt-4 rounded-lg bg-emerald-500/[0.08] px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400">
+            <p className="mt-4 rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
               액션 아이템 {summary.created_todos.length}건을 할 일 목록에 등록했습니다.
             </p>
           )}

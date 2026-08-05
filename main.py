@@ -15,7 +15,15 @@ from routers.groups import router as groups_router
 from routers.users import router as users_router
 from routers.announcements import router as announcements_router
 from auth import get_current_user
-from models import ChatMessage, Document, GroupMembership, Schedule, Todo, User
+from models import (
+    ChatMessage,
+    ChatRoom,
+    Document,
+    GroupMembership,
+    Schedule,
+    Todo,
+    User,
+)
 
 Base.metadata.create_all(bind=engine)
 
@@ -487,9 +495,15 @@ class ChatMessageCreate(BaseModel):
     content: str
 
 
+class ChatRoomCreate(BaseModel):
+    group_id: int
+    name: str
+
+
 def _serialize_message(message: ChatMessage) -> dict:
     return {
         "id": message.id,
+        "room_id": message.room_id,
         "sender": message.sender,
         "content": message.content,
         "is_bot": message.is_bot,
@@ -497,16 +511,113 @@ def _serialize_message(message: ChatMessage) -> dict:
     }
 
 
-@app.get("/chat/messages")
-def list_chat_messages(
+def _require_room_access(user: User, room_id: int, db: Session) -> ChatRoom:
+    """방을 찾고 그룹 멤버십까지 확인한 뒤 방을 돌려준다."""
+    room = db.get(ChatRoom, room_id)
+    if not room:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "CHAT_ROOM_NOT_FOUND", "message": "채팅방을 찾을 수 없습니다."},
+        )
+    _require_group_member(user, room.group_id, db)
+    return room
+
+
+@app.get("/chat/rooms")
+def list_chat_rooms(
     group_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """목록 화면에 필요한 마지막 메시지 미리보기까지 함께 내려준다."""
     _require_group_member(current_user, group_id, db)
+
+    rooms = db.scalars(
+        select(ChatRoom).where(ChatRoom.group_id == group_id).order_by(ChatRoom.created_at.asc())
+    ).all()
+
+    result = []
+    for room in rooms:
+        last = db.scalars(
+            select(ChatMessage)
+            .where(ChatMessage.room_id == room.id)
+            .order_by(ChatMessage.created_at.desc())
+            .limit(1)
+        ).first()
+        result.append(
+            {
+                "id": room.id,
+                "group_id": room.group_id,
+                "name": room.name,
+                "created_at": room.created_at.isoformat(),
+                "last_message": _serialize_message(last) if last else None,
+            }
+        )
+    return result
+
+
+@app.post("/chat/rooms")
+def create_chat_room(
+    body: ChatRoomCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_group_member(current_user, body.group_id, db)
+
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "CHAT_ROOM_NAME_REQUIRED", "message": "채팅방 이름이 비어 있습니다."},
+        )
+
+    room = ChatRoom(group_id=body.group_id, name=name, created_by=current_user.id)
+    db.add(room)
+    db.commit()
+    db.refresh(room)
+    return {
+        "id": room.id,
+        "group_id": room.group_id,
+        "name": room.name,
+        "created_at": room.created_at.isoformat(),
+        "last_message": None,
+    }
+
+
+@app.delete("/chat/rooms/{room_id}")
+def delete_chat_room(
+    room_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    room = _require_room_access(current_user, room_id, db)
+    if room.created_by != current_user.id and current_user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "CHAT_ROOM_DELETE_FORBIDDEN",
+                "message": "방을 만든 사람이나 관리자만 삭제할 수 있습니다.",
+            },
+        )
+
+    # 메시지를 먼저 지워야 외래키 제약에 걸리지 않는다.
+    for message in db.scalars(select(ChatMessage).where(ChatMessage.room_id == room_id)).all():
+        db.delete(message)
+    db.delete(room)
+    db.commit()
+    return {"deleted": True}
+
+
+@app.get("/chat/messages")
+def list_chat_messages(
+    room_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _require_room_access(current_user, room_id, db)
     messages = db.scalars(
         select(ChatMessage)
-        .where(ChatMessage.group_id == group_id)
+        .where(ChatMessage.room_id == room_id)
         .order_by(ChatMessage.created_at.desc())
         .limit(50)
     ).all()
@@ -561,17 +672,18 @@ def _apply_extracted_actions(db: Session, group_id: int, actions: dict) -> None:
 
 @app.post("/chat/messages")
 def create_chat_message(
-    group_id: int,
+    room_id: int,
     body: ChatMessageCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_group_member(current_user, group_id, db)
+    room = _require_room_access(current_user, room_id, db)
+    group_id = room.group_id
     content = body.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="메시지 내용이 비어 있습니다.")
 
-    user_message = ChatMessage(group_id=group_id, sender=body.sender, content=content, is_bot=False)
+    user_message = ChatMessage(room_id=room_id, sender=body.sender, content=content, is_bot=False)
     db.add(user_message)
     db.commit()
     db.refresh(user_message)
@@ -584,7 +696,7 @@ def create_chat_message(
     if "@비서" in content:
         recent = db.scalars(
             select(ChatMessage)
-            .where(ChatMessage.group_id == group_id)
+            .where(ChatMessage.room_id == room_id)
             .order_by(ChatMessage.created_at.desc())
             .limit(10)
         ).all()
@@ -592,7 +704,7 @@ def create_chat_message(
             {"sender": m.sender, "content": m.content} for m in reversed(recent)
         ]
         reply_text = gemini_service.generate_bot_reply(history, content)
-        bot_message = ChatMessage(group_id=group_id, sender="비서", content=reply_text, is_bot=True)
+        bot_message = ChatMessage(room_id=room_id, sender="비서", content=reply_text, is_bot=True)
         db.add(bot_message)
         db.commit()
         db.refresh(bot_message)

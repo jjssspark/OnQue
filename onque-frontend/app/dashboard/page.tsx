@@ -133,7 +133,7 @@ export default function DashboardPage() {
       {(workspaceError || documentsError) && (
         <div
           role="alert"
-          className="mt-5 rounded-xl border border-red-500/25 bg-red-500/[0.06] px-4 py-3 text-sm text-red-600 dark:text-red-400"
+          className="mt-5 rounded-xl border border-red-500/30 bg-red-500/[0.08] px-4 py-3 text-sm text-red-300"
         >
           <p className="font-semibold">일부 데이터를 불러오지 못했습니다.</p>
           <p className="mt-1 text-xs leading-relaxed opacity-80">

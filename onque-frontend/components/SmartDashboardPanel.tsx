@@ -22,7 +22,7 @@ export function SmartDashboardPanel() {
       {error && (
         <p
           role="alert"
-          className="border-b border-red-500/20 bg-red-500/[0.06] px-5 py-3 text-xs leading-relaxed text-red-600 dark:text-red-400"
+          className="border-b border-red-500/25 bg-red-500/[0.08] px-5 py-3 text-xs leading-relaxed text-red-300"
         >
           업무 데이터를 불러오지 못했습니다. 아래 목록은 비어 있는 것이 아니라 조회에 실패한
           상태입니다.

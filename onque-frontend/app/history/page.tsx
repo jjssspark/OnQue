@@ -6,12 +6,12 @@ import { SummaryReport } from '@/components/SummaryReport';
 import { deleteDocument, getDocuments, type DocumentRecord } from '@/lib/api';
 
 const CATEGORY_BADGE_CLASS: Record<string, string> = {
-  기획: 'bg-blue-100 text-blue-700',
-  디자인: 'bg-pink-100 text-pink-700',
-  개발: 'bg-emerald-100 text-emerald-700',
-  마케팅: 'bg-purple-100 text-purple-700',
-  기타: 'bg-slate-100 text-slate-700',
-  통화: 'bg-orange-100 text-orange-700',
+  기획: 'bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/20',
+  디자인: 'bg-pink-500/15 text-pink-300 ring-1 ring-pink-400/20',
+  개발: 'bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-400/20',
+  마케팅: 'bg-purple-500/15 text-purple-300 ring-1 ring-purple-400/20',
+  기타: 'bg-slate-500/15 text-slate-300 ring-1 ring-slate-400/20',
+  통화: 'bg-orange-500/15 text-orange-300 ring-1 ring-orange-400/20',
 };
 
 const CATEGORIES = ['전체', '통화', '기획', '디자인', '개발', '마케팅', '기타'] as const;

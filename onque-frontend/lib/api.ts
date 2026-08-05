@@ -74,10 +74,20 @@ export type DocumentRecord = {
 
 export type ChatMessageRecord = {
   id: number;
+  room_id: number;
   sender: string;
   content: string;
   is_bot: boolean;
   created_at: string;
+};
+
+export type ChatRoomRecord = {
+  id: number;
+  group_id: number;
+  name: string;
+  created_at: string;
+  /** 목록의 미리보기용. 아직 대화가 없으면 null. */
+  last_message: ChatMessageRecord | null;
 };
 
 export type AnnouncementRecord = {
@@ -195,12 +205,31 @@ export function deleteDocument(id: number): Promise<void> {
   return request(`/documents/${id}`, { method: 'DELETE' });
 }
 
-export function getChatMessages(groupId: number): Promise<ChatMessageRecord[]> {
-  return request(`/chat/messages?group_id=${groupId}`);
+export function listChatRooms(groupId: number): Promise<ChatRoomRecord[]> {
+  return request(`/chat/rooms?group_id=${groupId}`);
 }
 
-export function sendChatMessage(groupId: number, sender: string, content: string): Promise<ChatSendResult> {
-  return request(`/chat/messages?group_id=${groupId}`, {
+export function createChatRoom(groupId: number, name: string): Promise<ChatRoomRecord> {
+  return request('/chat/rooms', {
+    method: 'POST',
+    body: JSON.stringify({ group_id: groupId, name }),
+  });
+}
+
+export function deleteChatRoom(roomId: number): Promise<void> {
+  return request(`/chat/rooms/${roomId}`, { method: 'DELETE' });
+}
+
+export function getChatMessages(roomId: number): Promise<ChatMessageRecord[]> {
+  return request(`/chat/messages?room_id=${roomId}`);
+}
+
+export function sendChatMessage(
+  roomId: number,
+  sender: string,
+  content: string,
+): Promise<ChatSendResult> {
+  return request(`/chat/messages?room_id=${roomId}`, {
     method: 'POST',
     body: JSON.stringify({ sender, content }),
   });

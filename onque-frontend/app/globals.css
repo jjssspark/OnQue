@@ -1,15 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f5f6f8;
-  --foreground: #14161c;
-  --surface: #ffffff;
-  --border: #e2e4ea;
-  --sidebar: #14161f;
+  /* 다크 워크스페이스. 랜딩·로그인·스플래시가 쓰던 톤을 앱 전체로 확장해
+     로그인 순간 화면이 밝게 튀는 끊김을 없앤다. */
+  --background: #0a0c12;
+  --foreground: #e9ebf3;
+  --surface: #141722;
+  --border: #262a3a;
+  --sidebar: #070810;
   --sidebar-foreground: #c9cbd6;
-  --brand: #3452eb;
-  --brand-foreground: #ffffff;
-  --accent: #d97a2f;
+  /* 어두운 배경에서 #3452eb는 대비가 모자라 한 단계 밝힌다. */
+  --brand: #6183ff;
+  --brand-foreground: #08090f;
+  --accent: #f0954a;
 }
 
 @theme inline {
@@ -49,6 +52,38 @@ body {
   from {
     opacity: 0;
     transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 채팅창이 목록 위로 튀어나오는 느낌. 살짝 아래에서 확대되며 올라온다. */
+@keyframes chat-pop {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
   }
   to {
     opacity: 1;

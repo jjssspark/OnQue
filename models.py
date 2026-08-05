@@ -17,6 +17,8 @@ from db import Base
 DOCUMENT_CATEGORIES = ("기획", "디자인", "개발", "마케팅", "기타", "통화")
 DOCUMENT_SOURCE_TYPES = ("call", "document")
 USER_ROLES = ("admin", "member")
+# 그룹을 만들면 빈 채팅 목록 대신 바로 쓸 수 있는 방 하나를 함께 만든다.
+DEFAULT_CHAT_ROOM_NAME = "일반"
 
 
 class User(Base):
@@ -130,11 +132,24 @@ class Document(Base):
     )
 
 
+class ChatRoom(Base):
+    __tablename__ = "chat_rooms"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id"), nullable=False)
+    # 그룹은 방을 통해서만 안다. 여기 group_id를 함께 두면 방과 어긋날 수 있다.
+    room_id: Mapped[int] = mapped_column(ForeignKey("chat_rooms.id"), nullable=False)
     sender: Mapped[str] = mapped_column(Text, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     is_bot: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

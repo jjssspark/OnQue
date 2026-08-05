@@ -141,7 +141,7 @@ export function SummaryReport({
                 </div>
 
                 {isRegistered ? (
-                  <span className="shrink-0 self-start rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-600 sm:self-auto dark:text-emerald-400">
+                  <span className="shrink-0 self-start rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 sm:self-auto">
                     할 일 등록됨
                   </span>
                 ) : (

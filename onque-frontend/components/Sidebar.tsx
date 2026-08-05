@@ -44,7 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     href: '/chat',
     label: '팀 채팅',
-    description: '@비서에게 물어보기',
+    description: '주제별 방과 @비서',
     icon: (
       <path d="M4 5h16v11H8l-4 4V5Z" />
     ),
@@ -110,7 +110,7 @@ export function Sidebar() {
             className="w-full rounded-md bg-white/10 px-2 py-1.5 text-sm text-white"
           >
             {groups.map((g) => (
-              <option key={g.id} value={g.id} className="text-black">
+              <option key={g.id} value={g.id} className="bg-surface text-foreground">
                 {g.name}
               </option>
             ))}

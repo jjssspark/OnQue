@@ -143,6 +143,15 @@ todos         ['id', 'group_id', 'content', 'due_date', 'is_done', 'created_at',
 ### 추후 관리
 
 - **`create_all`만으로는 스키마 변경을 배포할 수 없다.** 모델에 컬럼을 추가할 때마다 수동 `ALTER TABLE`이 필요하며, 지금처럼 놓치기 쉽다. 데이터가 쌓이기 시작하면 Alembic 도입이 사실상 필수다. (현재는 데이터가 거의 없어 drop & recreate로 넘어감)
+
+**재발 1 (2026-08-05, 같은 날)** — 채팅방(`ChatRoom`) 기능을 넣으며 `chat_messages.group_id`를 `room_id`로 바꿨다. 신규 테이블 `chat_rooms`는 `create_all`이 만들어줬지만 `chat_messages`는 예상대로 옛 컬럼을 유지했다. 이번엔 알고 있었으므로 배포 전에 확인하고 처리했다.
+```python
+n = c.execute(text('SELECT count(*) FROM chat_messages')).scalar()
+assert n == 0, f'chat_messages에 {n}행이 있어 중단'
+c.execute(text('DROP TABLE chat_messages'))
+Base.metadata.create_all(bind=engine)
+```
+더불어 기존 그룹은 방 없이 남으므로, 그룹마다 기본 방("일반")을 채워 넣는 보정이 필요했다. **모델 변경이 기존 행에 대한 백필까지 요구하는 경우가 있다는 점**이 이번에 추가로 드러났다 — 스키마만 맞춘다고 끝이 아니다.
 - 배포 후 확인 항목에 **DB 스키마 대조**를 넣어야 한다. UI 관찰로는 침묵하는 실패를 못 잡는다.
 - 남아 있는 조용한 `catch`가 더 있는지 주기적으로 점검할 것.
 

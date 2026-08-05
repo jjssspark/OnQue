@@ -78,20 +78,23 @@ def test_todos_rejects_non_member(client):
     assert res.json()["error"]["code"] == "GROUP_ACCESS_FORBIDDEN"
 
 
-def test_chat_messages_isolated_between_groups(client):
+def test_chat_messages_isolated_between_rooms(client):
     admin_token, group_a, group_b = _setup_two_groups(client)
+    auth = {"Authorization": f"Bearer {admin_token}"}
+
+    # 그룹 생성 시 기본 방이 함께 만들어진다.
+    room_a = client.get("/chat/rooms", params={"group_id": group_a}, headers=auth).json()[0]
+    room_b = client.get("/chat/rooms", params={"group_id": group_b}, headers=auth).json()[0]
+
     client.post(
         "/chat/messages",
-        params={"group_id": group_a},
+        params={"room_id": room_a["id"]},
         json={"sender": "관리자", "content": "안녕하세요"},
-        headers={"Authorization": f"Bearer {admin_token}"},
+        headers=auth,
     )
-    res_a = client.get(
-        "/chat/messages", params={"group_id": group_a}, headers={"Authorization": f"Bearer {admin_token}"}
-    )
-    res_b = client.get(
-        "/chat/messages", params={"group_id": group_b}, headers={"Authorization": f"Bearer {admin_token}"}
-    )
+
+    res_a = client.get("/chat/messages", params={"room_id": room_a["id"]}, headers=auth)
+    res_b = client.get("/chat/messages", params={"room_id": room_b["id"]}, headers=auth)
     assert len(res_a.json()) == 1
     assert res_b.json() == []
 
