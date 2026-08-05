@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 
 from auth import create_access_token, get_current_user, hash_password, verify_password
 from db import get_db
-from models import Group, GroupMembership, User
+from models import User
+from routers.groups import get_user_groups
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
 
@@ -72,11 +73,7 @@ def login(body: LoginBody, db: Session = Depends(get_db)):
 
 @router.get("/me")
 def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    memberships = db.scalars(
-        select(GroupMembership).where(GroupMembership.user_id == current_user.id)
-    ).all()
-    group_ids = [m.group_id for m in memberships]
-    groups = db.scalars(select(Group).where(Group.id.in_(group_ids))).all() if group_ids else []
+    groups = get_user_groups(current_user.id, db)
 
     return {
         "success": True,

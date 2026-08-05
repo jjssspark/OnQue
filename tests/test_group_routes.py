@@ -88,3 +88,54 @@ def test_get_groups_returns_only_my_groups(client):
     res = client.get("/api/v1/groups", headers={"Authorization": f"Bearer {member_token}"})
     names = [g["name"] for g in res.json()["data"]]
     assert names == ["A팀"]
+
+
+def test_admin_can_remove_member_from_group(client):
+    admin_token, _ = _signup(client, "admin@onque.dev")
+    _, member_id = _signup(client, "member@onque.dev")
+    group = client.post(
+        "/api/v1/groups",
+        json={"name": "행사기획팀"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()["data"]
+    client.post(
+        f"/api/v1/groups/{group['id']}/members",
+        json={"user_id": member_id},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    res = client.delete(
+        f"/api/v1/groups/{group['id']}/members/{member_id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert res.status_code == 200
+
+    member_token = client.post(
+        "/api/v1/auth/login", json={"email": "member@onque.dev", "password": "password123"}
+    ).json()["data"]["token"]
+    res = client.get("/api/v1/groups", headers={"Authorization": f"Bearer {member_token}"})
+    names = [g["name"] for g in res.json()["data"]]
+    assert names == []
+
+
+def test_member_cannot_remove_member(client):
+    admin_token, _ = _signup(client, "admin@onque.dev")
+    _, member_id = _signup(client, "member@onque.dev")
+    other_token, _ = _signup(client, "other@onque.dev")
+    group = client.post(
+        "/api/v1/groups",
+        json={"name": "행사기획팀"},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    ).json()["data"]
+    client.post(
+        f"/api/v1/groups/{group['id']}/members",
+        json={"user_id": member_id},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    res = client.delete(
+        f"/api/v1/groups/{group['id']}/members/{member_id}",
+        headers={"Authorization": f"Bearer {other_token}"},
+    )
+    assert res.status_code == 403
+    assert res.json()["error"]["code"] == "GROUP_MEMBER_ADD_FORBIDDEN"

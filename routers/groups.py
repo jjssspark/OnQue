@@ -18,6 +18,14 @@ def _require_admin(user: User) -> None:
         )
 
 
+def get_user_groups(user_id: int, db: Session) -> list[Group]:
+    memberships = db.scalars(
+        select(GroupMembership).where(GroupMembership.user_id == user_id)
+    ).all()
+    group_ids = [m.group_id for m in memberships]
+    return db.scalars(select(Group).where(Group.id.in_(group_ids))).all() if group_ids else []
+
+
 class GroupCreateBody(BaseModel):
     name: str
 
@@ -46,11 +54,7 @@ def create_group(
 def list_my_groups(
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
-    memberships = db.scalars(
-        select(GroupMembership).where(GroupMembership.user_id == current_user.id)
-    ).all()
-    group_ids = [m.group_id for m in memberships]
-    groups = db.scalars(select(Group).where(Group.id.in_(group_ids))).all() if group_ids else []
+    groups = get_user_groups(current_user.id, db)
     return {
         "success": True,
         "data": [{"id": g.id, "name": g.name} for g in groups],
