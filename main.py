@@ -9,11 +9,27 @@ from sqlalchemy.orm import Session
 
 import gemini_service
 from db import Base, engine, get_db
+from routers.auth import router as auth_router
 from models import ChatMessage, Document, Schedule, Todo
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import HTTPException as FastAPIHTTPException
+
+
+@app.exception_handler(FastAPIHTTPException)
+async def http_exception_handler(request, exc: FastAPIHTTPException):
+    if isinstance(exc.detail, dict):
+        error = exc.detail
+    else:
+        error = {"code": "INTERNAL_ERROR", "message": str(exc.detail)}
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"success": False, "data": None, "error": error},
+    )
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,6 +38,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router)
 
 
 @app.get("/")
