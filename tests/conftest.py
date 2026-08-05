@@ -1,37 +1,32 @@
 import os
-from unittest.mock import patch
 
-# Set test environment variables BEFORE any module imports
-os.environ["DATABASE_URL"] = "postgresql://unused:unused@localhost/unused"
-os.environ["JWT_SECRET"] = "test-secret-key-not-for-production"
-os.environ["GOOGLE_API_KEY"] = "test-key"
+os.environ.setdefault("DATABASE_URL", "postgresql://unused:unused@localhost/unused")
+os.environ.setdefault("JWT_SECRET", "test-secret-key-not-for-production")
+os.environ.setdefault("GOOGLE_API_KEY", "test-key")
 
+import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+from fastapi.testclient import TestClient
 
-# Create test engine first
+# Create test engine with StaticPool to ensure all threads share the same in-memory database
 TEST_ENGINE = create_engine(
     "sqlite:///:memory:",
     connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
 )
 
-# Mock sqlalchemy.create_engine globally to return our test engine
-original_create_engine = create_engine
-def mock_create_engine(url, *args, **kwargs):
-    """Return the SQLite test engine regardless of the URL"""
-    return TEST_ENGINE
+# Import db first
+import db
 
-# Mock load_dotenv and create_engine to prevent it from reading the real .env file
-# and to use our SQLite engine instead of creating a PostgreSQL connection
-with patch("dotenv.load_dotenv"), patch("sqlalchemy.create_engine", side_effect=mock_create_engine):
-    import pytest
-    from sqlalchemy.orm import sessionmaker
-    from fastapi.testclient import TestClient
+# Replace the engine in db module BEFORE importing main
+# This ensures main.py uses our test engine when it runs Base.metadata.create_all()
+db.engine = TEST_ENGINE
 
-    import db
-    from db import Base, get_db
-    from main import app
-
-from sqlalchemy.orm import sessionmaker
+# Now import main which will use the replaced engine
+from db import Base, get_db
+from main import app
 
 TestSessionLocal = sessionmaker(bind=TEST_ENGINE, autoflush=False, autocommit=False)
 
