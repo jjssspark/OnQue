@@ -10,11 +10,16 @@ import {
   type ScheduleItem,
   type Todo,
 } from '@/lib/api';
+import { useAuth } from '@/components/AuthContext';
+
+const CURRENT_GROUP_KEY = 'onque_current_group_id';
 
 type WorkspaceContextValue = {
   todos: Todo[];
   schedules: ScheduleItem[];
   loading: boolean;
+  currentGroupId: number | null;
+  setCurrentGroupId: (id: number) => void;
   refresh: () => Promise<void>;
   applySnapshot: (todos: Todo[], schedules: ScheduleItem[]) => void;
   toggleTodo: (id: number, isDone: boolean) => Promise<void>;
@@ -25,13 +30,40 @@ type WorkspaceContextValue = {
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
+  const { groups } = useAuth();
   const [todos, setTodos] = useState<Todo[]>([]);
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentGroupId, setCurrentGroupIdState] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (groups.length === 0) {
+      setCurrentGroupIdState(null);
+      return;
+    }
+    const saved = typeof window !== 'undefined' ? window.localStorage.getItem(CURRENT_GROUP_KEY) : null;
+    const savedId = saved ? Number(saved) : null;
+    const stillMember = savedId !== null && groups.some((g) => g.id === savedId);
+    setCurrentGroupIdState(stillMember ? savedId : groups[0].id);
+  }, [groups]);
+
+  const setCurrentGroupId = useCallback((id: number) => {
+    window.localStorage.setItem(CURRENT_GROUP_KEY, String(id));
+    setCurrentGroupIdState(id);
+  }, []);
 
   const refresh = useCallback(async () => {
+    if (currentGroupId === null) {
+      setTodos([]);
+      setSchedules([]);
+      setLoading(false);
+      return;
+    }
     try {
-      const [nextTodos, nextSchedules] = await Promise.all([getTodos(), getSchedules()]);
+      const [nextTodos, nextSchedules] = await Promise.all([
+        getTodos(currentGroupId),
+        getSchedules(currentGroupId),
+      ]);
       setTodos(nextTodos);
       setSchedules(nextSchedules);
     } catch {
@@ -39,7 +71,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentGroupId]);
 
   useEffect(() => {
     refresh();
@@ -67,7 +99,18 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <WorkspaceContext.Provider
-      value={{ todos, schedules, loading, refresh, applySnapshot, toggleTodo, removeTodo, removeSchedule }}
+      value={{
+        todos,
+        schedules,
+        loading,
+        currentGroupId,
+        setCurrentGroupId,
+        refresh,
+        applySnapshot,
+        toggleTodo,
+        removeTodo,
+        removeSchedule,
+      }}
     >
       {children}
     </WorkspaceContext.Provider>

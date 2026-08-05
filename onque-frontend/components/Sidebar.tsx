@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { useWorkspace } from '@/components/WorkspaceContext';
+import { useAuth } from '@/components/AuthContext';
 
 type NavItem = {
   href: string;
@@ -64,6 +65,8 @@ const NAV_ITEMS: NavItem[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const { todos } = useWorkspace();
+  const { currentGroupId, setCurrentGroupId } = useWorkspace();
+  const { groups, user, logout } = useAuth();
   const openTodoCount = todos.filter((t) => !t.is_done).length;
 
   return (
@@ -75,6 +78,24 @@ export function Sidebar() {
         <h1 className="mt-1 text-xl font-bold text-white">
           On<span className="text-brand">Que</span>
         </h1>
+      </div>
+
+      <div className="px-4 py-3 border-b border-white/10">
+        {groups.length > 0 ? (
+          <select
+            value={currentGroupId ?? ''}
+            onChange={(e) => setCurrentGroupId(Number(e.target.value))}
+            className="w-full rounded-md bg-white/10 px-2 py-1.5 text-sm text-white"
+          >
+            {groups.map((g) => (
+              <option key={g.id} value={g.id} className="text-black">
+                {g.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <p className="text-xs text-white/50">아직 소속된 그룹이 없습니다. 관리자의 초대를 기다려주세요.</p>
+        )}
       </div>
 
       <nav className="flex-1 px-3 py-5 space-y-1">
@@ -122,9 +143,14 @@ export function Sidebar() {
       </nav>
 
       <div className="px-6 py-5 border-t border-white/10">
-        <p className="text-[11px] font-mono text-sidebar-foreground/40">
-          Gemini AI 기반 업무 자동화
-        </p>
+        <p className="text-[11px] font-mono text-sidebar-foreground/40">{user?.name} · {user?.role}</p>
+        <button
+          type="button"
+          onClick={logout}
+          className="mt-2 text-[11px] font-mono text-sidebar-foreground/60 hover:text-white"
+        >
+          로그아웃
+        </button>
       </div>
     </aside>
   );

@@ -112,16 +112,16 @@ async function postFile(path: string, file: File): Promise<SummaryResponse> {
   return res.json();
 }
 
-export function summarizeCall(file: File): Promise<SummaryResponse> {
-  return postFile('/summarize-call', file);
+export function summarizeCall(groupId: number, file: File): Promise<SummaryResponse> {
+  return postFile(`/summarize-call?group_id=${groupId}`, file);
 }
 
-export function summarizeDocument(file: File): Promise<SummaryResponse> {
-  return postFile('/summarize-document', file);
+export function summarizeDocument(groupId: number, file: File): Promise<SummaryResponse> {
+  return postFile(`/summarize-document?group_id=${groupId}`, file);
 }
 
-export function getTodos(): Promise<Todo[]> {
-  return request('/todos');
+export function getTodos(groupId: number): Promise<Todo[]> {
+  return request(`/todos?group_id=${groupId}`);
 }
 
 export function updateTodo(id: number, body: { is_done?: boolean }): Promise<Todo> {
@@ -132,28 +132,28 @@ export function deleteTodo(id: number): Promise<void> {
   return request(`/todos/${id}`, { method: 'DELETE' });
 }
 
-export function getSchedules(): Promise<ScheduleItem[]> {
-  return request('/schedules');
+export function getSchedules(groupId: number): Promise<ScheduleItem[]> {
+  return request(`/schedules?group_id=${groupId}`);
 }
 
 export function deleteSchedule(id: number): Promise<void> {
   return request(`/schedules/${id}`, { method: 'DELETE' });
 }
 
-export function getDocuments(): Promise<DocumentRecord[]> {
-  return request('/documents');
+export function getDocuments(groupId: number): Promise<DocumentRecord[]> {
+  return request(`/documents?group_id=${groupId}`);
 }
 
 export function deleteDocument(id: number): Promise<void> {
   return request(`/documents/${id}`, { method: 'DELETE' });
 }
 
-export function getChatMessages(): Promise<ChatMessageRecord[]> {
-  return request('/chat/messages');
+export function getChatMessages(groupId: number): Promise<ChatMessageRecord[]> {
+  return request(`/chat/messages?group_id=${groupId}`);
 }
 
-export function sendChatMessage(sender: string, content: string): Promise<ChatSendResult> {
-  return request('/chat/messages', {
+export function sendChatMessage(groupId: number, sender: string, content: string): Promise<ChatSendResult> {
+  return request(`/chat/messages?group_id=${groupId}`, {
     method: 'POST',
     body: JSON.stringify({ sender, content }),
   });
