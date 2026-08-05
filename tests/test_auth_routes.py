@@ -10,6 +10,34 @@ def test_signup_first_user_becomes_admin(client):
     assert body["data"]["token"]
 
 
+def test_signup_first_user_gets_default_group(client):
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={"email": "admin@onque.dev", "password": "password123", "name": "관리자"},
+    )
+    token = signup.json()["data"]["token"]
+
+    res = client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
+    groups = res.json()["data"]["groups"]
+    assert len(groups) == 1
+    assert groups[0]["name"] == "기본 그룹"
+
+
+def test_signup_second_user_has_no_group_until_invited(client):
+    client.post(
+        "/api/v1/auth/signup",
+        json={"email": "admin@onque.dev", "password": "password123", "name": "관리자"},
+    )
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={"email": "member@onque.dev", "password": "password123", "name": "직원"},
+    )
+    token = signup.json()["data"]["token"]
+
+    res = client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
+    assert res.json()["data"]["groups"] == []
+
+
 def test_signup_second_user_becomes_member(client):
     client.post(
         "/api/v1/auth/signup",
@@ -94,4 +122,5 @@ def test_me_returns_current_user_and_groups(client):
     res = client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 200
     assert res.json()["data"]["user"]["email"] == "me@onque.dev"
-    assert res.json()["data"]["groups"] == []
+    # 첫 가입자이므로 기본 그룹이 함께 생성된다.
+    assert [g["name"] for g in res.json()["data"]["groups"]] == ["기본 그룹"]

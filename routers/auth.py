@@ -5,10 +5,12 @@ from sqlalchemy.orm import Session
 
 from auth import create_access_token, get_current_user, hash_password, verify_password
 from db import get_db
-from models import User
+from models import Group, GroupMembership, User
 from routers.groups import get_user_groups
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
+
+DEFAULT_GROUP_NAME = "기본 그룹"
 
 
 class SignupBody(BaseModel):
@@ -45,6 +47,16 @@ def signup(body: SignupBody, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    # 첫 가입자는 관리자이자 워크스페이스의 시작점이다. 기본 그룹까지 만들어줘야
+    # 로그인 직후 빈 화면을 마주하지 않는다.
+    if is_first_user:
+        group = Group(name=DEFAULT_GROUP_NAME, created_by=user.id)
+        db.add(group)
+        db.commit()
+        db.refresh(group)
+        db.add(GroupMembership(user_id=user.id, group_id=group.id))
+        db.commit()
 
     token = create_access_token(user.id)
     return {

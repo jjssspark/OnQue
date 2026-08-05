@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/components/AuthContext';
 import { AuthLayout } from '@/components/AuthLayout';
+import { useSlowRequestHint } from '@/hooks/useSlowRequestHint';
 
 export default function SignupPage() {
   const { signup } = useAuth();
@@ -12,6 +13,7 @@ export default function SignupPage() {
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const showSlowHint = useSlowRequestHint(submitting);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -73,6 +75,11 @@ export default function SignupPage() {
         >
           {submitting ? '가입 중...' : '가입하기'}
         </button>
+        {showSlowHint && (
+          <p className="text-center text-xs leading-relaxed text-sidebar-foreground/50">
+            서버를 깨우는 중입니다. 처음 접속은 1분까지 걸릴 수 있습니다.
+          </p>
+        )}
       </form>
     </AuthLayout>
   );
