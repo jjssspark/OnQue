@@ -94,6 +94,16 @@ export default function ChatPage() {
     [],
   );
 
+  const handleMemberCountChange = useCallback((roomId: number, count: number) => {
+    setRooms((prev) => prev.map((r) => (r.id === roomId ? { ...r, member_count: count } : r)));
+  }, []);
+
+  // 나간 방은 더 이상 조회할 수 없다. 창을 닫고 목록에서도 뺀다.
+  const handleLeave = useCallback((roomId: number) => {
+    setRooms((prev) => prev.filter((r) => r.id !== roomId));
+    setOpenRoom(null);
+  }, []);
+
   if (currentGroupId === null) {
     return (
       <div className="mx-auto max-w-2xl px-6 py-10 text-sm text-foreground/60">
@@ -113,7 +123,8 @@ export default function ChatPage() {
         <p className="font-mono text-xs uppercase tracking-widest text-brand">Team Chat</p>
         <h1 className="mt-1 text-2xl font-bold text-foreground">팀 채팅</h1>
         <p className="mt-2 text-sm leading-relaxed text-foreground/55">
-          주제별로 방을 나눠 팀원과 대화하세요. AI는 평소엔 끼어들지 않고,{' '}
+          주제별로 방을 나눠 팀원과 대화하세요. 방을 만들면 나만 들어와 있고, 채팅창 오른쪽 위
+          인원 버튼으로 같은 그룹 사람을 초대합니다. AI는 평소엔 끼어들지 않고,{' '}
           <span className="font-mono text-brand">/help</span> 로 부를 때만 들어와 요약·문서 작성·할
           일 등록을 대신합니다.
         </p>
@@ -181,6 +192,9 @@ export default function ChatPage() {
                       <span className="truncate text-sm font-semibold text-foreground">
                         {room.name}
                       </span>
+                      <span className="shrink-0 font-mono text-[11px] text-foreground/30">
+                        {room.member_count}
+                      </span>
                       {room.ai_mode && (
                         <span className="shrink-0 rounded-full bg-brand/15 px-1.5 py-0.5 font-mono text-[10px] font-bold text-brand ring-1 ring-brand/25">
                           AI
@@ -226,6 +240,8 @@ export default function ChatPage() {
           room={openRoom}
           onClose={() => setOpenRoom(null)}
           onMessageSent={handleMessageSent}
+          onMemberCountChange={handleMemberCountChange}
+          onLeave={handleLeave}
         />
       )}
     </div>

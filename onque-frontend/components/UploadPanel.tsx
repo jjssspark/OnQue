@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { SummaryReport } from '@/components/SummaryReport';
+import { AnalyzingOverlay } from '@/components/AnalyzingOverlay';
 import { summarizeCall, summarizeDocument, type SummaryResponse } from '@/lib/api';
 
 type UploadKind = 'call' | 'document';
@@ -211,31 +212,16 @@ export function UploadPanel({
           {loading ? loadingLabel : submitLabel}
         </button>
 
-        {loading && (
-          <div className="mt-5">
-            <ol className="flex items-center gap-2">
-              {STAGES.map((label, i) => (
-                <li key={label} className="flex flex-1 flex-col gap-1.5">
-                  <span
-                    className={`h-1 rounded-full transition-colors duration-500 ${
-                      i <= stage ? 'bg-brand' : 'bg-foreground/10'
-                    }`}
-                  />
-                  <span
-                    className={`text-[11px] transition-colors ${
-                      i === stage ? 'font-semibold text-brand' : 'text-foreground/35'
-                    }`}
-                  >
-                    {label}
-                  </span>
-                </li>
-              ))}
-            </ol>
-            <p className="mt-3 text-center text-xs text-foreground/40">{loadingHint}</p>
-          </div>
-        )}
-
         {errorMsg && <p className="mt-3 text-sm text-red-500">{errorMsg}</p>}
+
+        {loading && file && (
+          <AnalyzingOverlay
+            filename={file.name}
+            stage={stage}
+            stages={STAGES}
+            hint={loadingHint}
+          />
+        )}
       </div>
 
       {summary && (

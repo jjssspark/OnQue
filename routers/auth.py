@@ -5,7 +5,14 @@ from sqlalchemy.orm import Session
 
 from auth import create_access_token, get_current_user, hash_password, verify_password
 from db import get_db
-from models import DEFAULT_CHAT_ROOM_NAME, ChatRoom, Group, GroupMembership, User
+from models import (
+    DEFAULT_CHAT_ROOM_NAME,
+    ChatRoom,
+    ChatRoomMember,
+    Group,
+    GroupMembership,
+    User,
+)
 from routers.groups import get_user_groups
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
@@ -56,11 +63,12 @@ def signup(body: SignupBody, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(group)
         db.add(GroupMembership(user_id=user.id, group_id=group.id))
-        db.add(
-            ChatRoom(
-                group_id=group.id, name=DEFAULT_CHAT_ROOM_NAME, created_by=user.id
-            )
+        room = ChatRoom(
+            group_id=group.id, name=DEFAULT_CHAT_ROOM_NAME, created_by=user.id
         )
+        db.add(room)
+        db.flush()
+        db.add(ChatRoomMember(room_id=room.id, user_id=user.id))
         db.commit()
 
     token = create_access_token(user.id)

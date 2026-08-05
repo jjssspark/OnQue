@@ -87,9 +87,18 @@ export type ChatRoomRecord = {
   name: string;
   /** /help로 AI를 부른 상태. 방 전체에 공유된다. */
   ai_mode: boolean;
+  member_count: number;
   created_at: string;
   /** 목록의 미리보기용. 아직 대화가 없으면 null. */
   last_message: ChatMessageRecord | null;
+};
+
+export type ChatRoomMember = {
+  id: number;
+  name: string;
+  email: string;
+  /** 방을 만든 사람. 다른 사람을 내보낼 수 있다. */
+  is_owner: boolean;
 };
 
 export type AnnouncementRecord = {
@@ -221,6 +230,24 @@ export function createChatRoom(groupId: number, name: string): Promise<ChatRoomR
 
 export function deleteChatRoom(roomId: number): Promise<void> {
   return request(`/chat/rooms/${roomId}`, { method: 'DELETE' });
+}
+
+export function listRoomMembers(roomId: number): Promise<ChatRoomMember[]> {
+  return request(`/chat/rooms/${roomId}/members`);
+}
+
+export function inviteRoomMember(roomId: number, userId: number): Promise<ChatRoomMember> {
+  return request(`/chat/rooms/${roomId}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId }),
+  });
+}
+
+export function removeRoomMember(
+  roomId: number,
+  userId: number,
+): Promise<{ removed: boolean; room_deleted: boolean }> {
+  return request(`/chat/rooms/${roomId}/members/${userId}`, { method: 'DELETE' });
 }
 
 export function getChatMessages(roomId: number): Promise<ChatMessageRecord[]> {

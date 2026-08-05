@@ -5,7 +5,7 @@ from datetime import date, datetime
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 import gemini_service
@@ -18,6 +18,7 @@ from auth import get_current_user
 from models import (
     ChatMessage,
     ChatRoom,
+    ChatRoomMember,
     Document,
     GroupMembership,
     Schedule,
@@ -500,6 +501,10 @@ class ChatRoomCreate(BaseModel):
     name: str
 
 
+class ChatRoomMemberCreate(BaseModel):
+    user_id: int
+
+
 def _serialize_message(message: ChatMessage) -> dict:
     return {
         "id": message.id,
@@ -530,26 +535,45 @@ HELP_TEXT = "AI 비서가 들어왔습니다. 이제 이 방의 대화를 함께
 EXIT_TEXT = "AI 비서가 나갔습니다. 이제 사람들끼리의 대화로 돌아갑니다. 다시 부르려면 /help 를 입력하세요."
 
 
-def _serialize_room(room: ChatRoom, last: ChatMessage | None) -> dict:
+def _serialize_room(room: ChatRoom, last: ChatMessage | None, member_count: int) -> dict:
     return {
         "id": room.id,
         "group_id": room.group_id,
         "name": room.name,
         "ai_mode": room.ai_mode,
+        "member_count": member_count,
         "created_at": room.created_at.isoformat(),
         "last_message": _serialize_message(last) if last else None,
     }
 
 
+def _serialize_room_member(user: User, room: ChatRoom) -> dict:
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "is_owner": user.id == room.created_by,
+    }
+
+
 def _require_room_access(user: User, room_id: int, db: Session) -> ChatRoom:
-    """방을 찾고 그룹 멤버십까지 확인한 뒤 방을 돌려준다."""
+    """방을 찾고 그룹 멤버십과 방 초대 여부까지 확인한 뒤 방을 돌려준다."""
     room = db.get(ChatRoom, room_id)
     if not room:
         raise HTTPException(
             status_code=404,
             detail={"code": "CHAT_ROOM_NOT_FOUND", "message": "채팅방을 찾을 수 없습니다."},
         )
+    # 그룹을 먼저 본다. 그룹 밖 사람에게 "초대되지 않았다"고 알려주면 방의 존재가 새어나간다.
     _require_group_member(user, room.group_id, db)
+    if not db.get(ChatRoomMember, {"room_id": room.id, "user_id": user.id}):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "CHAT_ROOM_FORBIDDEN",
+                "message": "이 채팅방에 초대되지 않았습니다.",
+            },
+        )
     return room
 
 
@@ -559,12 +583,23 @@ def list_chat_rooms(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """목록 화면에 필요한 마지막 메시지 미리보기까지 함께 내려준다."""
+    """내가 초대된 방만, 마지막 메시지 미리보기까지 함께 내려준다."""
     _require_group_member(current_user, group_id, db)
 
     rooms = db.scalars(
-        select(ChatRoom).where(ChatRoom.group_id == group_id).order_by(ChatRoom.created_at.asc())
+        select(ChatRoom)
+        .join(ChatRoomMember, ChatRoomMember.room_id == ChatRoom.id)
+        .where(ChatRoom.group_id == group_id, ChatRoomMember.user_id == current_user.id)
+        .order_by(ChatRoom.created_at.asc())
     ).all()
+
+    counts = dict(
+        db.execute(
+            select(ChatRoomMember.room_id, func.count())
+            .where(ChatRoomMember.room_id.in_([r.id for r in rooms]))
+            .group_by(ChatRoomMember.room_id)
+        ).all()
+    )
 
     result = []
     for room in rooms:
@@ -574,7 +609,7 @@ def list_chat_rooms(
             .order_by(ChatMessage.created_at.desc())
             .limit(1)
         ).first()
-        result.append(_serialize_room(room, last))
+        result.append(_serialize_room(room, last, counts.get(room.id, 0)))
     return result
 
 
@@ -595,9 +630,11 @@ def create_chat_room(
 
     room = ChatRoom(group_id=body.group_id, name=name, created_by=current_user.id)
     db.add(room)
+    db.flush()
+    db.add(ChatRoomMember(room_id=room.id, user_id=current_user.id))
     db.commit()
     db.refresh(room)
-    return _serialize_room(room, None)
+    return _serialize_room(room, None, 1)
 
 
 @app.delete("/chat/rooms/{room_id}")
@@ -616,12 +653,122 @@ def delete_chat_room(
             },
         )
 
-    # 메시지를 먼저 지워야 외래키 제약에 걸리지 않는다.
-    for message in db.scalars(select(ChatMessage).where(ChatMessage.room_id == room_id)).all():
-        db.delete(message)
-    db.delete(room)
+    _delete_room_cascade(db, room)
     db.commit()
     return {"deleted": True}
+
+
+def _delete_room_cascade(db: Session, room: ChatRoom) -> None:
+    """자식 행을 먼저 지워야 외래키 제약에 걸리지 않는다. 커밋은 호출부가 한다."""
+    for message in db.scalars(select(ChatMessage).where(ChatMessage.room_id == room.id)).all():
+        db.delete(message)
+    for member in db.scalars(
+        select(ChatRoomMember).where(ChatRoomMember.room_id == room.id)
+    ).all():
+        db.delete(member)
+    db.delete(room)
+
+
+@app.get("/chat/rooms/{room_id}/members")
+def list_room_members(
+    room_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    room = _require_room_access(current_user, room_id, db)
+    members = db.scalars(
+        select(User)
+        .join(ChatRoomMember, ChatRoomMember.user_id == User.id)
+        .where(ChatRoomMember.room_id == room_id)
+        .order_by(ChatRoomMember.created_at.asc())
+    ).all()
+    return [_serialize_room_member(u, room) for u in members]
+
+
+@app.post("/chat/rooms/{room_id}/members")
+def invite_room_member(
+    room_id: int,
+    body: ChatRoomMemberCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """방에 이미 있는 사람이면 누구나 초대할 수 있다."""
+    room = _require_room_access(current_user, room_id, db)
+
+    target = db.get(User, body.user_id)
+    if not target:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "USER_NOT_FOUND", "message": "사용자를 찾을 수 없습니다."},
+        )
+    # 그룹 밖 사람을 방에 넣으면 그룹 경계가 방을 통해 뚫린다. 그룹 초대가 먼저다.
+    if not db.get(GroupMembership, {"user_id": target.id, "group_id": room.group_id}):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "CHAT_ROOM_INVITE_NOT_IN_GROUP",
+                "message": "이 그룹에 속한 사람만 방에 초대할 수 있습니다.",
+            },
+        )
+    if db.get(ChatRoomMember, {"room_id": room_id, "user_id": target.id}):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "CHAT_ROOM_MEMBER_EXISTS",
+                "message": "이미 이 방에 있는 사람입니다.",
+            },
+        )
+
+    db.add(ChatRoomMember(room_id=room_id, user_id=target.id))
+    db.commit()
+    return _serialize_room_member(target, room)
+
+
+@app.delete("/chat/rooms/{room_id}/members/{user_id}")
+def remove_room_member(
+    room_id: int,
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """나가기는 누구나, 내보내기는 방을 만든 사람이나 관리자만."""
+    room = _require_room_access(current_user, room_id, db)
+    if (
+        user_id != current_user.id
+        and room.created_by != current_user.id
+        and current_user.role != "admin"
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "CHAT_ROOM_MEMBER_REMOVE_FORBIDDEN",
+                "message": "방을 만든 사람이나 관리자만 다른 사람을 내보낼 수 있습니다.",
+            },
+        )
+
+    membership = db.get(ChatRoomMember, {"room_id": room_id, "user_id": user_id})
+    if not membership:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "CHAT_ROOM_MEMBER_NOT_FOUND",
+                "message": "이 방에 없는 사람입니다.",
+            },
+        )
+
+    db.delete(membership)
+    db.flush()
+
+    # 아무도 없는 방은 누구도 다시 열 수 없다. 남겨두면 조회 불가능한 행만 쌓인다.
+    remaining = db.scalar(
+        select(func.count()).select_from(ChatRoomMember).where(ChatRoomMember.room_id == room_id)
+    )
+    room_deleted = remaining == 0
+    if room_deleted:
+        _delete_room_cascade(db, room)
+
+    db.commit()
+    return {"removed": True, "room_deleted": room_deleted}
 
 
 @app.get("/chat/messages")

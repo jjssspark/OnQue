@@ -146,6 +146,19 @@ class ChatRoom(Base):
     )
 
 
+class ChatRoomMember(Base):
+    """방에 초대된 사람. 그룹 멤버십과 별개로, 방 입장은 여기 있어야 가능하다."""
+
+    __tablename__ = "chat_room_members"
+    __table_args__ = (PrimaryKeyConstraint("room_id", "user_id"),)
+
+    room_id: Mapped[int] = mapped_column(ForeignKey("chat_rooms.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
 

@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import { useWorkspace } from '@/components/WorkspaceContext';
+import { RoomMembers } from '@/components/RoomMembers';
 import {
   getChatMessages,
   sendChatMessage,
@@ -15,19 +16,30 @@ type ChatWindowProps = {
   onClose: () => void;
   /** 목록의 미리보기와 AI 상태를 갱신하기 위해 부모에 알린다. */
   onMessageSent: (roomId: number, message: ChatMessageRecord, aiMode: boolean) => void;
+  onMemberCountChange: (roomId: number, count: number) => void;
+  /** 본인이 방을 나가면 목록에서도 빼야 한다. */
+  onLeave: (roomId: number) => void;
 };
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
 }
 
-export function ChatWindow({ room, onClose, onMessageSent }: ChatWindowProps) {
+export function ChatWindow({
+  room,
+  onClose,
+  onMessageSent,
+  onMemberCountChange,
+  onLeave,
+}: ChatWindowProps) {
   const { user } = useAuth();
   const { applySnapshot } = useWorkspace();
   const senderName = user?.name ?? '나';
 
   const [messages, setMessages] = useState<ChatMessageRecord[]>([]);
   const [aiMode, setAiMode] = useState(room.ai_mode);
+  const [memberCount, setMemberCount] = useState(room.member_count);
+  const [showMembers, setShowMembers] = useState(false);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -65,6 +77,14 @@ export function ChatWindow({ room, onClose, onMessageSent }: ChatWindowProps) {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
+
+  const handleMemberCount = useCallback(
+    (roomId: number, count: number) => {
+      setMemberCount(count);
+      onMemberCountChange(roomId, count);
+    },
+    [onMemberCountChange],
+  );
 
   const handleSend = async () => {
     const content = input.trim();
@@ -137,6 +157,31 @@ export function ChatWindow({ room, onClose, onMessageSent }: ChatWindowProps) {
           </div>
           <button
             type="button"
+            onClick={() => setShowMembers((v) => !v)}
+            aria-expanded={showMembers}
+            className={`ml-auto flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+              showMembers
+                ? 'bg-brand/15 text-brand ring-1 ring-brand/25'
+                : 'text-foreground/45 hover:bg-foreground/5 hover:text-foreground'
+            }`}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-3.5 w-3.5"
+              aria-hidden
+            >
+              <circle cx="9" cy="8" r="3" />
+              <path d="M3 19a6 6 0 0 1 12 0M16.5 5.5a3 3 0 0 1 0 5.8M18 19a5.5 5.5 0 0 0-3-4.9" />
+            </svg>
+            {memberCount}
+          </button>
+          <button
+            type="button"
             onClick={onClose}
             className="shrink-0 rounded-lg p-2 text-foreground/40 transition-colors hover:bg-foreground/5 hover:text-foreground"
             aria-label="닫기"
@@ -154,6 +199,10 @@ export function ChatWindow({ room, onClose, onMessageSent }: ChatWindowProps) {
             </svg>
           </button>
         </header>
+
+        {showMembers && (
+          <RoomMembers room={room} onCountChange={handleMemberCount} onLeft={onLeave} />
+        )}
 
         <div className="relative flex-1 space-y-3 overflow-y-auto px-5 py-5">
           {loading && <p className="text-sm text-foreground/40">불러오는 중...</p>}

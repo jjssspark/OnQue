@@ -5,7 +5,14 @@ from sqlalchemy.orm import Session
 
 from auth import get_current_user
 from db import get_db
-from models import DEFAULT_CHAT_ROOM_NAME, ChatRoom, Group, GroupMembership, User
+from models import (
+    DEFAULT_CHAT_ROOM_NAME,
+    ChatRoom,
+    ChatRoomMember,
+    Group,
+    GroupMembership,
+    User,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["groups"])
 
@@ -46,11 +53,12 @@ def create_group(
     db.commit()
     db.refresh(group)
     db.add(GroupMembership(user_id=current_user.id, group_id=group.id))
-    db.add(
-        ChatRoom(
-            group_id=group.id, name=DEFAULT_CHAT_ROOM_NAME, created_by=current_user.id
-        )
+    room = ChatRoom(
+        group_id=group.id, name=DEFAULT_CHAT_ROOM_NAME, created_by=current_user.id
     )
+    db.add(room)
+    db.flush()
+    db.add(ChatRoomMember(room_id=room.id, user_id=current_user.id))
     db.commit()
     return {"success": True, "data": {"id": group.id, "name": group.name}, "error": None}
 
@@ -130,6 +138,18 @@ def add_group_member(
     existing = db.get(GroupMembership, {"user_id": body.user_id, "group_id": group_id})
     if not existing:
         db.add(GroupMembership(user_id=body.user_id, group_id=group_id))
+        # 그룹에만 넣고 끝내면 채팅 화면이 빈 목록이다. 기본 방에는 자동으로 넣어주고,
+        # 나머지 주제별 방은 그 방 사람이 초대하게 둔다.
+        default_room = db.scalars(
+            select(ChatRoom)
+            .where(ChatRoom.group_id == group_id, ChatRoom.name == DEFAULT_CHAT_ROOM_NAME)
+            .order_by(ChatRoom.created_at.asc())
+            .limit(1)
+        ).first()
+        if default_room and not db.get(
+            ChatRoomMember, {"room_id": default_room.id, "user_id": body.user_id}
+        ):
+            db.add(ChatRoomMember(room_id=default_room.id, user_id=body.user_id))
         db.commit()
     return {"success": True, "data": {"group_id": group_id, "user_id": body.user_id}, "error": None}
 
@@ -149,5 +169,15 @@ def remove_group_member(
     membership = db.get(GroupMembership, {"user_id": user_id, "group_id": group_id})
     if membership:
         db.delete(membership)
+        # 그룹에서 빼면 방 접근은 이미 막히지만, 방 멤버 목록에는 계속 보인다. 같이 정리한다.
+        room_ids = db.scalars(
+            select(ChatRoom.id).where(ChatRoom.group_id == group_id)
+        ).all()
+        for room_member in db.scalars(
+            select(ChatRoomMember).where(
+                ChatRoomMember.room_id.in_(room_ids), ChatRoomMember.user_id == user_id
+            )
+        ).all():
+            db.delete(room_member)
         db.commit()
     return {"success": True, "data": {"deleted": True}, "error": None}
