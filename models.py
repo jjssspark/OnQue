@@ -122,6 +122,9 @@ class Document(Base):
     category: Mapped[str] = mapped_column(Text, nullable=False)
     filename: Mapped[str] = mapped_column(Text, nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
+    # 구조화 요약 JSON. 구버전 레코드와 모델이 스키마를 못 지킨 경우 None이라
+    # 프론트는 summary 평문으로 폴백한다.
+    summary_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

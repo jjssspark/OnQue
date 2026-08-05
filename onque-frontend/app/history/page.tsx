@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useWorkspace } from '@/components/WorkspaceContext';
+import { SummaryReport } from '@/components/SummaryReport';
 import { deleteDocument, getDocuments, type DocumentRecord } from '@/lib/api';
 
 const CATEGORY_BADGE_CLASS: Record<string, string> = {
@@ -128,7 +129,7 @@ export default function HistoryPage() {
                     </span>
                   </div>
                   <p className="mt-1 truncate text-xs text-foreground/50">
-                    {doc.summary.replace(/\n/g, ' ')}
+                    {doc.structured?.headline || doc.summary.replace(/\n/g, ' ')}
                   </p>
                 </button>
                 <div className="flex shrink-0 items-center gap-3">
@@ -145,10 +146,12 @@ export default function HistoryPage() {
               </div>
 
               {isExpanded && (
-                <div className="border-t border-border px-5 py-4">
-                  <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
-                    {doc.summary}
-                  </pre>
+                <div className="border-t border-border px-5 py-5">
+                  <SummaryReport
+                    key={doc.id}
+                    structured={doc.structured}
+                    plainText={doc.summary}
+                  />
                 </div>
               )}
             </div>

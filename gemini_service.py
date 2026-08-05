@@ -30,75 +30,149 @@ def korean_date_context() -> str:
 
 CALL_SUMMARY_PROMPT = """
 너는 콜센터/업무 통화 요약을 전문으로 하는 비서야.
-아래 형식으로, 보기 좋고 직관적인 "콜 요약 리포트"를 만들어 줘.
+주어진 통화 녹음을 듣고 아래 JSON 스키마에 맞춰 콜 요약 리포트를 만들어 줘.
 
-형식은 꼭 아래처럼 맞춰 줘 (제목/구분선/불릿 포함):
-
-[📌 한 줄 요약]
-- 통화 내용을 한두 문장으로 요약
-
-[💬 주요 논의 내용]
-- 핵심 논의 3~6개를 불릿으로 정리
-- 중요한 숫자, 날짜, 약속 사항이 있으면 함께 적기
-
-[🙋‍♀️ 고객/상대방 요구사항]
-- 고객이나 상대방이 명확히 요청한 사항만 bullet로 정리
-- 요구사항이 전혀 없으면 이 [🙋‍♀️ 고객/상대방 요구사항] 섹션은 아예 출력하지 말 것
-
-[✅ 다음 액션 아이템]
-- 통화 후 담당자가 해야 할 일을 bullet로 정리
-- 우선순위가 있으면 (우선) 표시
-- 실행할 일이 없다면 이 [✅ 다음 액션 아이템] 섹션은 아예 출력하지 말 것
-
-[📝 기타 메모]
-- 톤, 분위기, 리스크, 주의사항 등 참고용 메모를 1~3줄 이내로 정리
-- 특별히 남길 메모가 없다면 이 [📝 기타 메모] 섹션은 아예 출력하지 말 것
+각 필드의 의미:
+- headline: 통화 내용을 한두 문장으로 압축한 한 줄 요약.
+- key_points: 핵심 논의 3~6개. 중요한 숫자, 날짜, 약속 사항이 있으면 함께 적는다.
+- requests: 고객이나 상대방이 명확히 요청한 사항만. 없으면 빈 배열.
+- action_items: 통화 후 담당자가 해야 할 일. 마감일이 언급됐으면 due_date에
+  YYYY-MM-DD로, 언급되지 않았으면 빈 문자열. 급한 건은 priority를 high로.
+  할 일이 없으면 빈 배열.
+- notes: 톤, 분위기, 리스크, 주의사항 등 참고 메모를 1~3줄. 없으면 빈 문자열.
 
 규칙:
-- 출력은 반드시 위와 같은 섹션 제목 형식을 그대로 사용할 것.
-- 불릿은 모두 "- "로 시작할 것.
-- 불필요한 서론, 설명 문장, 인사말은 쓰지 말 것.
 - 통화와 직접 관련 없는 추측은 하지 말 것.
-- 전체 분량은 A4 1장 이내, 너무 장황하게 쓰지 말 것.
-
-응답은 한국어로만 작성해 줘.
+- 이모지, 서론, 인사말, 마크다운 기호를 쓰지 말 것.
+- 모든 문자열은 한국어로 작성할 것.
 """
 
 DOCUMENT_SUMMARY_PROMPT = """
 너는 회사 업무 문서(회의록, 보고서 등)를 요약하는 비서야.
-아래 형식으로, 보기 좋고 직관적인 "문서 요약 리포트"를 만들어 줘.
+주어진 문서를 읽고 아래 JSON 스키마에 맞춰 문서 요약 리포트를 만들어 줘.
 
-형식은 꼭 아래처럼 맞춰 줘 (제목/구분선/불릿 포함):
-
-[📌 한 줄 요약]
-- 문서 내용을 한두 문장으로 요약
-
-[💬 주요 내용]
-- 핵심 내용 3~6개를 불릿으로 정리
-- 중요한 숫자, 날짜, 결정 사항이 있으면 함께 적기
-
-[✅ 다음 액션 아이템]
-- 문서에서 확인된, 담당자가 해야 할 일을 불릿으로 정리
-- 우선순위가 있으면 (우선) 표시
-- 실행할 일이 없다면 이 [✅ 다음 액션 아이템] 섹션은 아예 출력하지 말 것
-
-[📝 기타 메모]
-- 리스크, 주의사항 등 참고용 메모를 1~3줄 이내로 정리
-- 특별히 남길 메모가 없다면 이 [📝 기타 메모] 섹션은 아예 출력하지 말 것
+각 필드의 의미:
+- headline: 문서 내용을 한두 문장으로 압축한 한 줄 요약.
+- key_points: 핵심 내용 3~6개. 중요한 숫자, 날짜, 결정 사항이 있으면 함께 적는다.
+- requests: 이 문서에서는 사용하지 않으므로 항상 빈 배열.
+- action_items: 문서에서 확인된, 담당자가 해야 할 일. 마감일이 언급됐으면
+  due_date에 YYYY-MM-DD로, 언급되지 않았으면 빈 문자열. 급한 건은 priority를
+  high로. 할 일이 없으면 빈 배열.
+- notes: 리스크, 주의사항 등 참고 메모를 1~3줄. 없으면 빈 문자열.
 
 규칙:
-- 출력은 반드시 위와 같은 섹션 제목 형식을 그대로 사용할 것.
-- 불릿은 모두 "- "로 시작할 것.
-- 불필요한 서론, 설명 문장, 인사말은 쓰지 말 것.
 - 문서와 직접 관련 없는 추측은 하지 말 것.
-- 전체 분량은 A4 1장 이내, 너무 장황하게 쓰지 말 것.
-
-응답은 한국어로만 작성해 줘.
+- 이모지, 서론, 인사말, 마크다운 기호를 쓰지 말 것.
+- 모든 문자열은 한국어로 작성할 것.
 """
 
+SUMMARY_PRIORITIES = ("high", "normal")
 
-async def summarize_upload(file: UploadFile, prompt: str) -> str:
-    """업로드된 파일을 Gemini에 전달해 요약 텍스트를 반환한다."""
+_SUMMARY_SCHEMA = {
+    "type": "OBJECT",
+    "required": ["headline", "key_points", "requests", "action_items", "notes"],
+    "properties": {
+        "headline": {"type": "STRING"},
+        "key_points": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "requests": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "action_items": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "required": ["content", "due_date", "priority"],
+                "properties": {
+                    "content": {"type": "STRING"},
+                    "due_date": {
+                        "type": "STRING",
+                        "description": "YYYY-MM-DD 형식. 마감일이 없으면 빈 문자열.",
+                    },
+                    "priority": {"type": "STRING", "enum": list(SUMMARY_PRIORITIES)},
+                },
+            },
+        },
+        "notes": {"type": "STRING"},
+    },
+}
+
+
+def normalize_summary(raw: dict) -> dict:
+    """모델 응답을 UI·DB가 신뢰할 수 있는 형태로 보정한다.
+
+    스키마를 줘도 필드가 비거나 타입이 어긋난 채 오는 경우가 있어, 저장 전에
+    한 번 걸러야 프론트에서 같은 방어 코드를 중복으로 두지 않는다.
+    """
+
+    def _clean_list(value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [s.strip() for s in value if isinstance(s, str) and s.strip()]
+
+    action_items = []
+    for item in raw.get("action_items") or []:
+        if not isinstance(item, dict):
+            continue
+        content = (item.get("content") or "").strip()
+        if not content:
+            continue
+        priority = item.get("priority")
+        action_items.append(
+            {
+                "content": content,
+                "due_date": (item.get("due_date") or "").strip(),
+                "priority": priority if priority in SUMMARY_PRIORITIES else "normal",
+            }
+        )
+
+    return {
+        "headline": (raw.get("headline") or "").strip(),
+        "key_points": _clean_list(raw.get("key_points")),
+        "requests": _clean_list(raw.get("requests")),
+        "action_items": action_items,
+        "notes": (raw.get("notes") or "").strip(),
+    }
+
+
+def render_summary_text(structured: dict) -> str:
+    """구조화 요약을 평문으로 렌더한다.
+
+    이력 검색이 요약 원문 문자열 매칭에 의존하므로, 구조화 이후에도 평문 사본을
+    함께 저장한다.
+    """
+
+    blocks: list[str] = []
+
+    if structured["headline"]:
+        blocks.append(f"[한 줄 요약]\n{structured['headline']}")
+
+    for title, items in (
+        ("주요 내용", structured["key_points"]),
+        ("요구사항", structured["requests"]),
+    ):
+        if items:
+            body = "\n".join(f"- {item}" for item in items)
+            blocks.append(f"[{title}]\n{body}")
+
+    if structured["action_items"]:
+        lines = []
+        for item in structured["action_items"]:
+            prefix = "- (우선) " if item["priority"] == "high" else "- "
+            due = f" (마감 {item['due_date']})" if item["due_date"] else ""
+            lines.append(f"{prefix}{item['content']}{due}")
+        blocks.append("[액션 아이템]\n" + "\n".join(lines))
+
+    if structured["notes"]:
+        blocks.append(f"[메모]\n{structured['notes']}")
+
+    return "\n\n".join(blocks)
+
+
+async def summarize_upload(file: UploadFile, prompt: str) -> tuple[dict | None, str]:
+    """업로드 파일을 요약해 (구조화 요약, 평문 요약)을 반환한다.
+
+    구조화 응답을 파싱하지 못하면 스키마 없이 한 번 더 호출해 평문만 확보한다.
+    오디오 입력에 스키마를 함께 거는 조합은 실패할 여지가 있어, 요약 자체를 잃는
+    것보다 구조만 포기하는 편이 낫다.
+    """
 
     try:
         suffix = os.path.splitext(file.filename or "")[1]
@@ -112,17 +186,31 @@ async def summarize_upload(file: UploadFile, prompt: str) -> str:
     try:
         uploaded_file = client.files.upload(file=temp_path)
 
+        try:
+            response = client.models.generate_content(
+                model=MODEL,
+                contents=[uploaded_file, prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=_SUMMARY_SCHEMA,
+                ),
+            )
+            structured = normalize_summary(json.loads(response.text))
+            if structured["headline"] or structured["key_points"]:
+                return structured, render_summary_text(structured)
+        except Exception:
+            pass
+
         response = client.models.generate_content(
             model=MODEL,
             contents=[uploaded_file, prompt],
         )
-
-        summary_text = getattr(response, "text", "").strip()
+        summary_text = (getattr(response, "text", "") or "").strip()
 
         if not summary_text:
             raise HTTPException(status_code=500, detail="Gemini 요약 결과가 비어 있습니다.")
 
-        return summary_text
+        return None, summary_text
 
     except HTTPException:
         raise

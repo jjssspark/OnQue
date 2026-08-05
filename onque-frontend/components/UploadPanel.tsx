@@ -1,15 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useWorkspace } from '@/components/WorkspaceContext';
+import { SummaryReport } from '@/components/SummaryReport';
 import { summarizeCall, summarizeDocument, type SummaryResponse } from '@/lib/api';
 
 type UploadKind = 'call' | 'document';
 
-const SUMMARIZE_FN: Record<UploadKind, (groupId: number, file: File) => Promise<SummaryResponse>> = {
+const SUMMARIZE_FN: Record<
+  UploadKind,
+  (groupId: number, file: File, autoTodo: boolean) => Promise<SummaryResponse>
+> = {
   call: summarizeCall,
   document: summarizeDocument,
 };
+
+const STAGES = ['파일 업로드', 'AI 분석', '리포트 정리'] as const;
 
 type UploadPanelProps = {
   accept: string;
@@ -30,18 +36,42 @@ export function UploadPanel({
   loadingHint,
   emptySelectionMessage,
 }: UploadPanelProps) {
-  const { currentGroupId } = useWorkspace();
+  const { currentGroupId, refresh } = useWorkspace();
   const [file, setFile] = useState<File | null>(null);
+  const [autoTodo, setAutoTodo] = useState(false);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [stage, setStage] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      setSummary(null);
-      setErrorMsg('');
+  // 서버가 진행률을 주지 않으므로 경과 시간으로 단계를 넘긴다. 정확한 진행률이
+  // 아니라, 응답이 수십 초 걸리는 동안 화면이 멈춘 것처럼 보이지 않게 하는 장치다.
+  useEffect(() => {
+    if (!loading) {
+      setStage(0);
+      return;
     }
+    const toAnalyzing = setTimeout(() => setStage(1), 1200);
+    const toComposing = setTimeout(() => setStage(2), 6000);
+    return () => {
+      clearTimeout(toAnalyzing);
+      clearTimeout(toComposing);
+    };
+  }, [loading]);
+
+  const acceptedExtensions = accept.split(',').map((ext) => ext.trim().toLowerCase());
+
+  const selectFile = (next: File) => {
+    const dot = next.name.lastIndexOf('.');
+    const extension = dot >= 0 ? next.name.slice(dot).toLowerCase() : '';
+    if (!acceptedExtensions.includes(extension)) {
+      setErrorMsg(acceptHint);
+      return;
+    }
+    setFile(next);
+    setSummary(null);
+    setErrorMsg('');
   };
 
   const handleUpload = async () => {
@@ -56,8 +86,9 @@ export function UploadPanel({
     setErrorMsg('');
 
     try {
-      const data = await SUMMARIZE_FN[historyType](currentGroupId, file);
+      const data = await SUMMARIZE_FN[historyType](currentGroupId, file, autoTodo);
       setSummary(data);
+      if (data.created_todos.length > 0) await refresh();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '요약 처리 중 오류가 발생했습니다.';
       setErrorMsg(message);
@@ -76,57 +107,167 @@ export function UploadPanel({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-border bg-surface p-5 shadow-sm">
-        <label className="text-sm font-semibold text-foreground">파일 선택</label>
-        <p className="mt-1 text-xs text-foreground/50">{acceptHint}</p>
-
-        <input
-          type="file"
-          accept={accept}
-          onChange={handleFileChange}
-          className="mt-3 w-full rounded-lg border border-border bg-background p-2 text-sm cursor-pointer"
+      <div className="relative overflow-hidden rounded-2xl border border-border bg-surface p-5 shadow-sm sm:p-6">
+        <div
+          className={`pointer-events-none absolute -top-24 left-1/2 h-64 w-64 -translate-x-1/2 rounded-full bg-brand/20 blur-[100px] transition-opacity duration-500 ${
+            isDragging || loading ? 'opacity-100' : 'opacity-0'
+          }`}
+          aria-hidden
         />
 
-        {file && (
-          <p className="mt-2 w-fit rounded-md border border-border bg-background px-3 py-1 text-xs text-foreground/60">
-            {file.name}
+        <label
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            const dropped = e.dataTransfer.files?.[0];
+            if (dropped) selectFile(dropped);
+          }}
+          className={`relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-all ${
+            isDragging
+              ? 'scale-[1.01] border-brand bg-brand/[0.06]'
+              : 'border-border hover:border-brand/50 hover:bg-foreground/[0.02]'
+          }`}
+        >
+          <input
+            type="file"
+            accept={accept}
+            onChange={(e) => {
+              const picked = e.target.files?.[0];
+              if (picked) selectFile(picked);
+            }}
+            className="sr-only"
+          />
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={`h-8 w-8 transition-colors ${isDragging ? 'text-brand' : 'text-foreground/25'}`}
+            aria-hidden
+          >
+            <path d="M12 16V4m0 0L8 8m4-4 4 4" />
+            <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+          </svg>
+          <p className="text-sm font-semibold text-foreground">
+            파일을 끌어다 놓거나 <span className="text-brand">클릭해서 선택</span>
           </p>
+          <p className="font-mono text-[11px] text-foreground/40">{acceptHint}</p>
+        </label>
+
+        {file && (
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2">
+            <span className="truncate text-xs text-foreground/70">{file.name}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setFile(null);
+                setSummary(null);
+              }}
+              className="shrink-0 text-[11px] text-foreground/30 transition-colors hover:text-red-500"
+            >
+              제거
+            </button>
+          </div>
         )}
 
+        <label className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2.5">
+          <span className="min-w-0">
+            <span className="block text-xs font-semibold text-foreground">
+              액션 아이템 자동 등록
+            </span>
+            <span className="block text-[11px] text-foreground/40">
+              요약에서 찾은 할 일을 바로 목록에 넣습니다
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={autoTodo}
+            onChange={(e) => setAutoTodo(e.target.checked)}
+            className="peer sr-only"
+          />
+          <span
+            className="relative h-5 w-9 shrink-0 rounded-full bg-foreground/15 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:bg-brand peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-brand/50"
+            aria-hidden
+          />
+        </label>
+
         <button
+          type="button"
           onClick={handleUpload}
           disabled={loading || !file}
-          className={`mt-4 w-full rounded-lg py-2.5 text-sm font-semibold text-brand-foreground transition ${
+          className={`mt-4 w-full rounded-xl py-3 text-sm font-semibold text-brand-foreground transition-all ${
             loading || !file
-              ? 'cursor-not-allowed bg-foreground/20'
-              : 'bg-brand hover:brightness-110'
+              ? 'cursor-not-allowed bg-foreground/15'
+              : 'bg-brand hover:-translate-y-px hover:brightness-110'
           }`}
         >
           {loading ? loadingLabel : submitLabel}
         </button>
 
         {loading && (
-          <p className="mt-3 text-center text-xs text-foreground/40">{loadingHint}</p>
+          <div className="mt-5">
+            <ol className="flex items-center gap-2">
+              {STAGES.map((label, i) => (
+                <li key={label} className="flex flex-1 flex-col gap-1.5">
+                  <span
+                    className={`h-1 rounded-full transition-colors duration-500 ${
+                      i <= stage ? 'bg-brand' : 'bg-foreground/10'
+                    }`}
+                  />
+                  <span
+                    className={`text-[11px] transition-colors ${
+                      i === stage ? 'font-semibold text-brand' : 'text-foreground/35'
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <p className="mt-3 text-center text-xs text-foreground/40">{loadingHint}</p>
+          </div>
         )}
 
         {errorMsg && <p className="mt-3 text-sm text-red-500">{errorMsg}</p>}
       </div>
 
       {summary && (
-        <div className="rounded-xl border border-border bg-surface p-6 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-foreground">요약 리포트</h2>
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-semibold text-brand">
-                {summary.category}
-              </span>
-              <span className="font-mono text-xs text-foreground/40">{summary.filename}</span>
+        <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm sm:p-7">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+            <div className="min-w-0">
+              <p className="font-mono text-[11px] uppercase tracking-widest text-brand">
+                Summary Report
+              </p>
+              <p className="mt-1 truncate text-sm font-semibold text-foreground">
+                {summary.filename}
+              </p>
             </div>
+            <span className="shrink-0 rounded-full bg-brand/10 px-2.5 py-1 text-[11px] font-semibold text-brand">
+              {summary.category}
+            </span>
           </div>
-          <hr className="my-4 border-border" />
-          <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90">
-            {summary.summary}
-          </pre>
+
+          {summary.created_todos.length > 0 && (
+            <p className="mt-4 rounded-lg bg-emerald-500/[0.08] px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400">
+              액션 아이템 {summary.created_todos.length}건을 할 일 목록에 등록했습니다.
+            </p>
+          )}
+
+          <div className="mt-6">
+            <SummaryReport
+              key={summary.id}
+              structured={summary.structured}
+              plainText={summary.summary}
+              registeredContents={summary.created_todos.map((t) => t.content)}
+            />
+          </div>
         </div>
       )}
     </div>

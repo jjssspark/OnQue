@@ -22,11 +22,29 @@ export type MeResponse = {
 
 type Envelope<T> = { success: boolean; data: T; error: { code: string; message: string } | null };
 
+export type ActionItem = {
+  content: string;
+  /** YYYY-MM-DD. 마감일이 없으면 빈 문자열. */
+  due_date: string;
+  priority: 'high' | 'normal';
+};
+
+export type StructuredSummary = {
+  headline: string;
+  key_points: string[];
+  requests: string[];
+  action_items: ActionItem[];
+  notes: string;
+};
+
 export type SummaryResponse = {
   id: number;
   filename: string;
   summary: string;
   category: string;
+  /** 모델이 스키마를 못 지킨 경우 null — 이때는 summary 평문으로 폴백한다. */
+  structured: StructuredSummary | null;
+  created_todos: Todo[];
 };
 
 export type Todo = {
@@ -50,6 +68,7 @@ export type DocumentRecord = {
   category: string;
   filename: string;
   summary: string;
+  structured: StructuredSummary | null;
   created_at: string;
 };
 
@@ -121,16 +140,35 @@ async function postFile(path: string, file: File): Promise<SummaryResponse> {
   return res.json();
 }
 
-export function summarizeCall(groupId: number, file: File): Promise<SummaryResponse> {
-  return postFile(`/summarize-call?group_id=${groupId}`, file);
+export function summarizeCall(
+  groupId: number,
+  file: File,
+  autoTodo: boolean,
+): Promise<SummaryResponse> {
+  return postFile(`/summarize-call?group_id=${groupId}&auto_todo=${autoTodo}`, file);
 }
 
-export function summarizeDocument(groupId: number, file: File): Promise<SummaryResponse> {
-  return postFile(`/summarize-document?group_id=${groupId}`, file);
+export function summarizeDocument(
+  groupId: number,
+  file: File,
+  autoTodo: boolean,
+): Promise<SummaryResponse> {
+  return postFile(`/summarize-document?group_id=${groupId}&auto_todo=${autoTodo}`, file);
 }
 
 export function getTodos(groupId: number): Promise<Todo[]> {
   return request(`/todos?group_id=${groupId}`);
+}
+
+export function createTodo(
+  groupId: number,
+  content: string,
+  dueDate?: string,
+): Promise<Todo> {
+  return request('/todos', {
+    method: 'POST',
+    body: JSON.stringify({ group_id: groupId, content, due_date: dueDate || null }),
+  });
 }
 
 export function updateTodo(id: number, body: { is_done?: boolean }): Promise<Todo> {

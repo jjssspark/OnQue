@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import date, datetime
 
@@ -82,9 +83,72 @@ def _require_group_member(user: User, group_id: int, db: Session) -> None:
 # ── 통화/문서 요약 ──────────────────────────────────────────
 
 
+def _create_todos_from_actions(
+    db: Session, group_id: int, action_items: list[dict]
+) -> list[Todo]:
+    """요약에서 뽑은 액션 아이템을 할 일로 등록하고 생성된 항목을 돌려준다."""
+
+    created: list[Todo] = []
+    for item in action_items:
+        content = (item.get("content") or "").strip()
+        if not content:
+            continue
+        todo = Todo(
+            group_id=group_id,
+            content=content,
+            due_date=_parse_date(item.get("due_date") or ""),
+        )
+        db.add(todo)
+        created.append(todo)
+    return created
+
+
+async def _summarize_and_store(
+    db: Session,
+    group_id: int,
+    file: UploadFile,
+    prompt: str,
+    source_type: str,
+    auto_todo: bool,
+    category: str | None = None,
+) -> dict:
+    """요약 → 저장 → (선택) 할 일 등록까지의 공통 흐름."""
+
+    structured, summary_text = await gemini_service.summarize_upload(file, prompt)
+
+    doc = Document(
+        group_id=group_id,
+        source_type=source_type,
+        category=category or gemini_service.classify_document_category(summary_text),
+        filename=file.filename,
+        summary=summary_text,
+        summary_json=json.dumps(structured, ensure_ascii=False) if structured else None,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    created_todos: list[Todo] = []
+    if auto_todo and structured:
+        created_todos = _create_todos_from_actions(db, group_id, structured["action_items"])
+        db.commit()
+        for todo in created_todos:
+            db.refresh(todo)
+
+    return {
+        "id": doc.id,
+        "filename": doc.filename,
+        "summary": doc.summary,
+        "category": doc.category,
+        "structured": structured,
+        "created_todos": [_serialize_todo(t) for t in created_todos],
+    }
+
+
 @app.post("/summarize-call")
 async def summarize_call(
     group_id: int,
+    auto_todo: bool = False,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -98,25 +162,15 @@ async def summarize_call(
             detail=f"오디오 파일만 업로드 가능합니다. (현재 content_type: {file.content_type})",
         )
 
-    summary_text = await gemini_service.summarize_upload(file, gemini_service.CALL_SUMMARY_PROMPT)
-
-    doc = Document(
-        group_id=group_id,
+    return await _summarize_and_store(
+        db,
+        group_id,
+        file,
+        gemini_service.CALL_SUMMARY_PROMPT,
         source_type="call",
+        auto_todo=auto_todo,
         category="통화",
-        filename=file.filename,
-        summary=summary_text,
     )
-    db.add(doc)
-    db.commit()
-    db.refresh(doc)
-
-    return {
-        "id": doc.id,
-        "filename": doc.filename,
-        "summary": doc.summary,
-        "category": doc.category,
-    }
 
 
 ALLOWED_DOCUMENT_EXTENSIONS = {".pdf", ".txt", ".md"}
@@ -125,6 +179,7 @@ ALLOWED_DOCUMENT_EXTENSIONS = {".pdf", ".txt", ".md"}
 @app.post("/summarize-document")
 async def summarize_document(
     group_id: int,
+    auto_todo: bool = False,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -139,28 +194,23 @@ async def summarize_document(
             detail=f"pdf, txt, md 파일만 업로드 가능합니다. (현재 확장자: {suffix or '없음'})",
         )
 
-    summary_text = await gemini_service.summarize_upload(
-        file, gemini_service.DOCUMENT_SUMMARY_PROMPT
-    )
-    category = gemini_service.classify_document_category(summary_text)
-
-    doc = Document(
-        group_id=group_id,
+    return await _summarize_and_store(
+        db,
+        group_id,
+        file,
+        gemini_service.DOCUMENT_SUMMARY_PROMPT,
         source_type="document",
-        category=category,
-        filename=file.filename,
-        summary=summary_text,
+        auto_todo=auto_todo,
     )
-    db.add(doc)
-    db.commit()
-    db.refresh(doc)
 
-    return {
-        "id": doc.id,
-        "filename": doc.filename,
-        "summary": doc.summary,
-        "category": doc.category,
-    }
+
+def _parse_summary_json(raw: str | None) -> dict | None:
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except ValueError:
+        return None
 
 
 def _serialize_document(doc: Document) -> dict:
@@ -170,6 +220,7 @@ def _serialize_document(doc: Document) -> dict:
         "category": doc.category,
         "filename": doc.filename,
         "summary": doc.summary,
+        "structured": _parse_summary_json(doc.summary_json),
         "created_at": doc.created_at.isoformat(),
     }
 
@@ -223,6 +274,12 @@ class TodoUpdate(BaseModel):
     due_date: str | None = None
 
 
+class TodoCreate(BaseModel):
+    group_id: int
+    content: str
+    due_date: str | None = None
+
+
 def _serialize_todo(todo: Todo) -> dict:
     return {
         "id": todo.id,
@@ -246,6 +303,33 @@ def list_todos(
         .order_by(Todo.is_done.asc(), Todo.created_at.desc())
     ).all()
     return [_serialize_todo(t) for t in todos]
+
+
+@app.post("/todos")
+def create_todo(
+    body: TodoCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """요약 리포트에서 액션 아이템을 골라 등록할 때 쓰는 수동 생성 엔드포인트."""
+    _require_group_member(current_user, body.group_id, db)
+
+    content = body.content.strip()
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "TODO_CONTENT_REQUIRED", "message": "할 일 내용이 비어 있습니다."},
+        )
+
+    todo = Todo(
+        group_id=body.group_id,
+        content=content,
+        due_date=_parse_date(body.due_date or ""),
+    )
+    db.add(todo)
+    db.commit()
+    db.refresh(todo)
+    return _serialize_todo(todo)
 
 
 @app.patch("/todos/{todo_id}")
