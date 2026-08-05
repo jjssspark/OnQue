@@ -11,7 +11,7 @@ function formatTime(iso: string): string {
 }
 
 export default function ChatPage() {
-  const { applySnapshot } = useWorkspace();
+  const { applySnapshot, currentGroupId } = useWorkspace();
   const [messages, setMessages] = useState<ChatMessageRecord[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -20,11 +20,12 @@ export default function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    getChatMessages()
+    if (currentGroupId === null) return;
+    getChatMessages(currentGroupId)
       .then(setMessages)
       .catch(() => setErrorMsg('대화 이력을 불러오지 못했습니다.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [currentGroupId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -32,14 +33,14 @@ export default function ChatPage() {
 
   const handleSend = async () => {
     const content = input.trim();
-    if (!content || sending) return;
+    if (!content || sending || currentGroupId === null) return;
 
     setSending(true);
     setErrorMsg('');
     setInput('');
 
     try {
-      const result = await sendChatMessage(SENDER_NAME, content);
+      const result = await sendChatMessage(currentGroupId, SENDER_NAME, content);
       setMessages((prev) => [
         ...prev,
         result.message,
@@ -54,11 +55,19 @@ export default function ChatPage() {
     }
   };
 
+  if (currentGroupId === null) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-10 text-sm text-foreground/60">
+        아직 소속된 그룹이 없습니다. 관리자가 그룹에 초대하면 이용할 수 있습니다.
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-[calc(100vh-64px)] flex-col md:min-h-screen">
       <div className="border-b border-border px-6 py-5">
         <p className="font-mono text-xs uppercase tracking-widest text-brand">Team Chat</p>
-        <h1 className="mt-1 text-2xl font-bold text-foreground">💬 팀 채팅</h1>
+        <h1 className="mt-1 text-2xl font-bold text-foreground">팀 채팅</h1>
         <p className="mt-2 text-sm text-foreground/60">
           메시지를 보내면 <span className="font-semibold text-brand">@비서</span>가 대화를 지켜보다가
           할 일·일정을 자동으로 정리합니다. <span className="font-mono">@비서</span>를 직접 불러 물어볼 수도 있어요.
@@ -76,7 +85,7 @@ export default function ChatPage() {
           <div key={m.id} className={`flex ${m.is_bot ? 'justify-start' : 'justify-end'}`}>
             <div className={`max-w-[75%] ${m.is_bot ? '' : 'text-right'}`}>
               <p className="mb-1 text-[11px] text-foreground/40">
-                {m.is_bot ? '🤖 비서' : m.sender} · {formatTime(m.created_at)}
+                {m.is_bot ? '비서' : m.sender} · {formatTime(m.created_at)}
               </p>
               <div
                 className={`inline-block rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
@@ -93,7 +102,7 @@ export default function ChatPage() {
         <div ref={bottomRef} />
       </div>
 
-      {errorMsg && <p className="px-6 pb-2 text-sm text-red-500">⚠ {errorMsg}</p>}
+      {errorMsg && <p className="px-6 pb-2 text-sm text-red-500">{errorMsg}</p>}
 
       <div className="border-t border-border p-4">
         <div className="flex gap-2">

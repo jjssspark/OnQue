@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useWorkspace } from '@/components/WorkspaceContext';
 import { deleteDocument, getDocuments, type DocumentRecord } from '@/lib/api';
 
 const CATEGORY_BADGE_CLASS: Record<string, string> = {
@@ -15,6 +16,7 @@ const CATEGORY_BADGE_CLASS: Record<string, string> = {
 const CATEGORIES = ['전체', '통화', '기획', '디자인', '개발', '마케팅', '기타'] as const;
 
 export default function HistoryPage() {
+  const { currentGroupId } = useWorkspace();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>('전체');
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -23,11 +25,12 @@ export default function HistoryPage() {
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    getDocuments()
+    if (currentGroupId === null) return;
+    getDocuments(currentGroupId)
       .then(setDocuments)
       .catch(() => setErrorMsg('이력을 불러오지 못했습니다.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [currentGroupId]);
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -50,10 +53,18 @@ export default function HistoryPage() {
     }
   };
 
+  if (currentGroupId === null) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-10 text-sm text-foreground/60">
+        아직 소속된 그룹이 없습니다. 관리자가 그룹에 초대하면 이용할 수 있습니다.
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
       <p className="font-mono text-xs uppercase tracking-widest text-brand">History</p>
-      <h1 className="mt-1 text-2xl font-bold text-foreground">🔍 이력 조회</h1>
+      <h1 className="mt-1 text-2xl font-bold text-foreground">이력 조회</h1>
       <p className="mt-2 text-sm text-foreground/60">
         지금까지 요약한 통화·문서 결과를 검색하고 다시 확인할 수 있습니다.
       </p>
@@ -84,7 +95,7 @@ export default function HistoryPage() {
         </div>
       </div>
 
-      {errorMsg && <p className="mt-3 text-sm text-red-500">⚠ {errorMsg}</p>}
+      {errorMsg && <p className="mt-3 text-sm text-red-500">{errorMsg}</p>}
 
       <div className="mt-6 space-y-3">
         {loading && <p className="text-sm text-foreground/40">불러오는 중...</p>}

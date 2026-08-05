@@ -2,16 +2,27 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useWorkspace } from '@/components/WorkspaceContext';
 import { getDocuments, type DocumentRecord } from '@/lib/api';
 
 export function RecentActivity() {
+  const { currentGroupId } = useWorkspace();
   const [entries, setEntries] = useState<DocumentRecord[] | null>(null);
 
   useEffect(() => {
-    getDocuments()
+    if (currentGroupId === null) return;
+    getDocuments(currentGroupId)
       .then((docs) => setEntries(docs.slice(0, 5)))
       .catch(() => setEntries([]));
-  }, []);
+  }, [currentGroupId]);
+
+  if (currentGroupId === null) {
+    return (
+      <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-foreground/40">
+        아직 소속된 그룹이 없습니다.
+      </p>
+    );
+  }
 
   if (entries === null) return null;
 
