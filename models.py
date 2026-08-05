@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     PrimaryKeyConstraint,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -54,6 +55,32 @@ class GroupMembership(Base):
     group_id: Mapped[int] = mapped_column(ForeignKey("groups.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class GroupInvitation(Base):
+    """가입 전인 사람도 미리 초대해 두기 위한 대기 초대.
+
+    같은 이메일로 가입하는 순간 자동으로 그룹에 합류한다. 이게 없으면 상대가
+    먼저 가입할 때까지 초대를 보낼 방법이 없다.
+    """
+
+    __tablename__ = "group_invitations"
+    __table_args__ = (
+        UniqueConstraint("group_id", "email", name="uq_group_invitations_group_email"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id"), nullable=False)
+    # 항상 소문자로 저장한다. 대소문자만 다른 초대가 둘로 갈라지면 아무도 못 찾는다.
+    email: Mapped[str] = mapped_column(Text, nullable=False)
+    invited_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # 합류하면 시각이 찍힌다. None이면 아직 대기 중.
+    accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
 

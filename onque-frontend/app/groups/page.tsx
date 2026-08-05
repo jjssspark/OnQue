@@ -4,11 +4,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import {
   addGroupMember,
+  cancelGroupInvitation,
   createGroup,
+  inviteToGroupByEmail,
+  listGroupInvitations,
   listGroupMembers,
   listUsers,
   removeGroupMember,
   type AuthUser,
+  type GroupInvitation,
 } from '@/lib/api';
 
 export default function GroupsPage() {
@@ -19,6 +23,9 @@ export default function GroupsPage() {
   const [members, setMembers] = useState<AuthUser[]>([]);
   const [allUsers, setAllUsers] = useState<AuthUser[]>([]);
   const [newGroupName, setNewGroupName] = useState('');
+  const [invitations, setInvitations] = useState<GroupInvitation[]>([]);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -30,7 +37,12 @@ export default function GroupsPage() {
 
   const loadMembers = useCallback(async (groupId: number) => {
     try {
-      setMembers(await listGroupMembers(groupId));
+      const [nextMembers, nextInvitations] = await Promise.all([
+        listGroupMembers(groupId),
+        listGroupInvitations(groupId),
+      ]);
+      setMembers(nextMembers);
+      setInvitations(nextInvitations);
     } catch (err) {
       setError(err instanceof Error ? err.message : '멤버를 불러오지 못했습니다.');
     }
@@ -80,6 +92,45 @@ export default function GroupsPage() {
     }
   }
 
+  async function handleInviteByEmail(e: React.FormEvent) {
+    e.preventDefault();
+    const email = inviteEmail.trim();
+    if (!email || selectedGroupId === null || busy) return;
+
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await inviteToGroupByEmail(selectedGroupId, email);
+      setInviteEmail('');
+      setNotice(
+        result.status === 'joined'
+          ? `${result.user.name} 님을 그룹에 바로 추가했습니다.`
+          : `${result.email} 님을 초대했습니다. 이 이메일로 가입하면 자동으로 합류합니다.`,
+      );
+      await loadMembers(selectedGroupId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '초대에 실패했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCancelInvitation(invitationId: number) {
+    if (selectedGroupId === null || busy) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await cancelGroupInvitation(selectedGroupId, invitationId);
+      await loadMembers(selectedGroupId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '초대 취소에 실패했습니다.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleRemoveMember(userId: number) {
     if (selectedGroupId === null || busy) return;
     setBusy(true);
@@ -108,6 +159,11 @@ export default function GroupsPage() {
       </p>
 
       {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
+      {notice && (
+        <p className="mt-4 rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
+          {notice}
+        </p>
+      )}
 
       {isAdmin && (
         <form onSubmit={handleCreateGroup} className="mt-6 flex gap-2">
@@ -183,10 +239,64 @@ export default function GroupsPage() {
 
             {isAdmin && (
               <section className="rounded-xl border border-border bg-surface p-5 shadow-sm">
-                <h2 className="text-sm font-bold text-foreground">초대할 수 있는 사람</h2>
+                <h2 className="text-sm font-bold text-foreground">이메일로 초대</h2>
+                <p className="mt-1 text-xs leading-relaxed text-foreground/45">
+                  아직 가입 전이어도 초대해 둘 수 있습니다. 그 이메일로 가입하는 순간 이 그룹에
+                  자동으로 합류합니다.
+                </p>
+                <form onSubmit={handleInviteByEmail} className="mt-3 flex gap-2">
+                  <input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="name@company.com"
+                    className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-foreground/25 focus:border-brand focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={busy || !inviteEmail.trim()}
+                    className="shrink-0 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-brand-foreground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    초대
+                  </button>
+                </form>
+
+                {invitations.length > 0 && (
+                  <>
+                    <h3 className="mt-5 font-mono text-[10px] uppercase tracking-widest text-foreground/35">
+                      가입 대기 {invitations.length}
+                    </h3>
+                    <ul className="mt-2 divide-y divide-border">
+                      {invitations.map((inv) => (
+                        <li
+                          key={inv.id}
+                          className="flex items-center justify-between gap-3 py-2.5"
+                        >
+                          <p className="min-w-0 truncate font-mono text-xs text-foreground/60">
+                            {inv.email}
+                          </p>
+                          <button
+                            onClick={() => handleCancelInvitation(inv.id)}
+                            disabled={busy}
+                            className="shrink-0 text-[11px] text-foreground/30 transition-colors hover:text-red-400 disabled:opacity-50"
+                          >
+                            취소
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </section>
+            )}
+
+            {isAdmin && (
+              <section className="rounded-xl border border-border bg-surface p-5 shadow-sm">
+                <h2 className="text-sm font-bold text-foreground">가입한 사람 중에서 추가</h2>
                 {candidates.length === 0 ? (
                   <p className="mt-3 text-xs text-foreground/40">
-                    초대할 수 있는 사용자가 없습니다. 먼저 회원가입이 필요합니다.
+                    가입한 사용자가 모두 이 그룹에 있습니다. 새로운 사람은 위에서 이메일로
+                    초대하세요.
                   </p>
                 ) : (
                   <ul className="mt-3 divide-y divide-border">

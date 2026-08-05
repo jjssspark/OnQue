@@ -1,6 +1,8 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from auth import create_access_token, get_current_user, hash_password, verify_password
@@ -10,10 +12,11 @@ from models import (
     ChatRoom,
     ChatRoomMember,
     Group,
+    GroupInvitation,
     GroupMembership,
     User,
 )
-from routers.groups import get_user_groups
+from routers.groups import get_user_groups, join_group
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
 
@@ -69,6 +72,19 @@ def signup(body: SignupBody, db: Session = Depends(get_db)):
         db.add(room)
         db.flush()
         db.add(ChatRoomMember(room_id=room.id, user_id=user.id))
+        db.commit()
+
+    # 가입 전에 받아둔 초대를 여기서 정산한다. 이 단계가 없으면 초대가 영영 닿지 않는다.
+    pending = db.scalars(
+        select(GroupInvitation).where(
+            func.lower(GroupInvitation.email) == body.email.lower(),
+            GroupInvitation.accepted_at.is_(None),
+        )
+    ).all()
+    for invitation in pending:
+        join_group(db, user.id, invitation.group_id)
+        invitation.accepted_at = datetime.now(timezone.utc)
+    if pending:
         db.commit()
 
     token = create_access_token(user.id)

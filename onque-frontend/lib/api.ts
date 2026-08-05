@@ -101,6 +101,21 @@ export type ChatRoomMember = {
   is_owner: boolean;
 };
 
+export type GroupInvitation = {
+  id: number;
+  group_id: number;
+  email: string;
+  invited_by: number;
+  created_at: string;
+  /** 합류하면 시각이 찍힌다. 대기 목록에는 null인 것만 나온다. */
+  accepted_at: string | null;
+};
+
+/** 이미 가입한 사람은 바로 합류하고, 아니면 대기 초대로 남는다. */
+export type InviteResult =
+  | { status: 'joined'; email: string; user: { id: number; email: string; name: string } }
+  | { status: 'pending'; email: string; invitation: GroupInvitation };
+
 export type AnnouncementRecord = {
   id: number;
   title: string;
@@ -307,6 +322,23 @@ export function addGroupMember(groupId: number, userId: number): Promise<unknown
 
 export function removeGroupMember(groupId: number, userId: number): Promise<unknown> {
   return requestEnveloped(`/api/v1/groups/${groupId}/members/${userId}`, {
+    method: 'DELETE',
+  });
+}
+
+export function inviteToGroupByEmail(groupId: number, email: string): Promise<InviteResult> {
+  return requestEnveloped(`/api/v1/groups/${groupId}/invitations`, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function listGroupInvitations(groupId: number): Promise<GroupInvitation[]> {
+  return requestEnveloped(`/api/v1/groups/${groupId}/invitations`);
+}
+
+export function cancelGroupInvitation(groupId: number, invitationId: number): Promise<unknown> {
+  return requestEnveloped(`/api/v1/groups/${groupId}/invitations/${invitationId}`, {
     method: 'DELETE',
   });
 }
