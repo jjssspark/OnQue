@@ -10,29 +10,27 @@ type AuthLayoutProps = {
 
 export function AuthLayout({ title, subtitle, children, footer }: AuthLayoutProps) {
   return (
-    <div className="flex min-h-screen">
-      <div className="hidden w-[380px] shrink-0 flex-col justify-between bg-sidebar px-10 py-12 text-sidebar-foreground lg:flex">
-        <Link href="/" className="text-xl font-bold text-white">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-sidebar px-6 py-12">
+      <div
+        className="pointer-events-none absolute left-1/2 top-0 h-[480px] w-[480px] -translate-x-1/2 -translate-y-1/3 rounded-full bg-brand/20 blur-[120px]"
+        aria-hidden
+      />
+
+      <div className="relative w-full max-w-sm">
+        <Link href="/" className="text-lg font-bold text-white">
           On<span className="text-brand">Que</span>
         </Link>
-        <p className="text-sm leading-relaxed text-sidebar-foreground/70">
-          통화 녹음, 회의록, 팀 채팅 속 할 일과 일정을
-          <br />
-          Gemini AI가 대신 정리하는 업무 워크스페이스입니다.
+        <p className="mt-1 font-mono text-[11px] uppercase tracking-widest text-sidebar-foreground/40">
+          AI Agent Workspace
         </p>
-        <p className="font-mono text-[11px] text-white/30">© 2026 OnQue</p>
-      </div>
 
-      <div className="flex flex-1 items-center justify-center px-6 py-12">
-        <div className="w-full max-w-sm">
-          <Link href="/" className="text-lg font-bold text-foreground lg:hidden">
-            On<span className="text-brand">Que</span>
-          </Link>
-          <h1 className="mt-4 text-xl font-bold text-foreground lg:mt-0">{title}</h1>
-          <p className="mt-1 text-sm text-foreground/60">{subtitle}</p>
+        <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.04] p-7 shadow-xl backdrop-blur-sm">
+          <h1 className="text-lg font-bold text-white">{title}</h1>
+          <p className="mt-1 text-sm text-sidebar-foreground/60">{subtitle}</p>
           <div className="mt-6">{children}</div>
-          <div className="mt-4">{footer}</div>
         </div>
+
+        <div className="mt-5 text-center">{footer}</div>
       </div>
     </div>
   );

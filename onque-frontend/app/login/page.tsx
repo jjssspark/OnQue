@@ -30,7 +30,7 @@ export default function LoginPage() {
       title="로그인"
       subtitle="계정 정보를 입력해 워크스페이스에 접속하세요."
       footer={
-        <p className="text-center text-xs text-foreground/60">
+        <p className="text-xs text-sidebar-foreground/60">
           계정이 없으신가요?{' '}
           <Link href="/signup" className="font-semibold text-brand">
             회원가입
@@ -45,7 +45,7 @@ export default function LoginPage() {
           placeholder="이메일"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm"
+          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-sidebar-foreground/40 focus:border-brand focus:outline-none"
         />
         <input
           type="password"
@@ -53,9 +53,9 @@ export default function LoginPage() {
           placeholder="비밀번호"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm"
+          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-sidebar-foreground/40 focus:border-brand focus:outline-none"
         />
-        {error && <p className="text-xs text-red-500">{error}</p>}
+        {error && <p className="text-xs text-red-400">{error}</p>}
         <button
           type="submit"
           disabled={submitting}

@@ -31,7 +31,7 @@ export default function SignupPage() {
       title="회원가입"
       subtitle="새 계정을 만들고 워크스페이스를 시작하세요."
       footer={
-        <p className="text-center text-xs text-foreground/60">
+        <p className="text-xs text-sidebar-foreground/60">
           이미 계정이 있으신가요?{' '}
           <Link href="/login" className="font-semibold text-brand">
             로그인
@@ -46,7 +46,7 @@ export default function SignupPage() {
           placeholder="이름"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm"
+          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-sidebar-foreground/40 focus:border-brand focus:outline-none"
         />
         <input
           type="email"
@@ -54,7 +54,7 @@ export default function SignupPage() {
           placeholder="이메일"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm"
+          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-sidebar-foreground/40 focus:border-brand focus:outline-none"
         />
         <input
           type="password"
@@ -63,9 +63,9 @@ export default function SignupPage() {
           placeholder="비밀번호 (8자 이상)"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm"
+          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-sidebar-foreground/40 focus:border-brand focus:outline-none"
         />
-        {error && <p className="text-xs text-red-500">{error}</p>}
+        {error && <p className="text-xs text-red-400">{error}</p>}
         <button
           type="submit"
           disabled={submitting}
