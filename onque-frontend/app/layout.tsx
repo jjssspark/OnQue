@@ -6,6 +6,7 @@ import { MobileNav } from "@/components/MobileNav";
 import { SmartDashboardPanel } from "@/components/SmartDashboardPanel";
 import { WorkspaceProvider } from "@/components/WorkspaceContext";
 import { AuthProvider } from "@/components/AuthContext";
+import { AuthGuard } from "@/components/AuthGuard";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -34,14 +35,16 @@ export default function RootLayout({
       >
         <AuthProvider>
           <WorkspaceProvider>
-            <div className="flex min-h-screen">
-              <Sidebar />
-              <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-                <MobileNav />
-                <main className="flex-1 overflow-y-auto">{children}</main>
+            <AuthGuard>
+              <div className="flex min-h-screen">
+                <Sidebar />
+                <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+                  <MobileNav />
+                  <main className="flex-1 overflow-y-auto">{children}</main>
+                </div>
+                <SmartDashboardPanel />
               </div>
-              <SmartDashboardPanel />
-            </div>
+            </AuthGuard>
           </WorkspaceProvider>
         </AuthProvider>
       </body>
