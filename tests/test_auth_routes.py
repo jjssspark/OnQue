@@ -30,6 +30,30 @@ def test_signup_duplicate_email_returns_409(client):
     assert res.json()["error"]["code"] == "USER_EMAIL_DUPLICATE"
 
 
+def test_signup_short_password_returns_422(client):
+    res = client.post(
+        "/api/v1/auth/signup",
+        json={"email": "short@onque.dev", "password": "1234567", "name": "짧은비번"},
+    )
+    assert res.status_code == 422
+
+
+def test_signup_invalid_email_returns_422(client):
+    res = client.post(
+        "/api/v1/auth/signup",
+        json={"email": "not-an-email", "password": "password123", "name": "잘못된이메일"},
+    )
+    assert res.status_code == 422
+
+
+def test_signup_empty_name_returns_422(client):
+    res = client.post(
+        "/api/v1/auth/signup",
+        json={"email": "noname@onque.dev", "password": "password123", "name": ""},
+    )
+    assert res.status_code == 422
+
+
 def test_login_success_returns_token(client):
     client.post(
         "/api/v1/auth/signup",

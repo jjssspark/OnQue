@@ -106,7 +106,8 @@ async function postFile(path: string, file: File): Promise<SummaryResponse> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.detail || '요약 요청이 실패했습니다.');
+    const message = body?.error?.message || body?.detail || '요약 요청이 실패했습니다.';
+    throw new Error(message);
   }
 
   return res.json();

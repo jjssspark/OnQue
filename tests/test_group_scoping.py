@@ -1,4 +1,4 @@
-from models import Todo
+from models import Document, Todo
 
 
 def _setup_two_groups(client):
@@ -94,6 +94,54 @@ def test_chat_messages_isolated_between_groups(client):
     )
     assert len(res_a.json()) == 1
     assert res_b.json() == []
+
+
+def test_documents_isolated_between_groups(client, db_session):
+    admin_token, group_a, group_b = _setup_two_groups(client)
+    # 문서는 gemini 요약 엔드포인트로만 생성되므로 직접 seed한다.
+    db_session.add(
+        Document(
+            group_id=group_a,
+            source_type="document",
+            category="기획",
+            filename="a-team-plan.pdf",
+            summary="A팀 기획안 요약",
+        )
+    )
+    db_session.commit()
+
+    res_a = client.get(
+        "/documents", params={"group_id": group_a}, headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    res_b = client.get(
+        "/documents", params={"group_id": group_b}, headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert [d["filename"] for d in res_a.json()] == ["a-team-plan.pdf"]
+    assert res_b.json() == []
+
+
+def test_template_document_visible_in_every_group(client, db_session):
+    admin_token, group_a, group_b = _setup_two_groups(client)
+    db_session.add(
+        Document(
+            group_id=None,
+            is_template=True,
+            source_type="document",
+            category="기타",
+            filename="company-template.docx",
+            summary="전사 공용 템플릿",
+        )
+    )
+    db_session.commit()
+
+    res_a = client.get(
+        "/documents", params={"group_id": group_a}, headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    res_b = client.get(
+        "/documents", params={"group_id": group_b}, headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    assert "company-template.docx" in [d["filename"] for d in res_a.json()]
+    assert "company-template.docx" in [d["filename"] for d in res_b.json()]
 
 
 def test_admin_can_create_company_wide_schedule_visible_in_every_group(client):

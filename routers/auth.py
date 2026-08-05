@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,9 +12,9 @@ router = APIRouter(prefix="/api/v1", tags=["auth"])
 
 
 class SignupBody(BaseModel):
-    email: str
-    password: str
-    name: str
+    email: EmailStr
+    password: str = Field(min_length=8)
+    name: str = Field(min_length=1)
 
 
 class LoginBody(BaseModel):

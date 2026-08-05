@@ -5,7 +5,14 @@
    (main.py의 Base.metadata.create_all이 신규 테이블만 생성한다).
 2. POST /api/v1/auth/signup 으로 최초 관리자 계정을 만든다.
 3. 이 스크립트를 실행한다 — 기존 todos/chat_messages/schedules/documents 테이블에
-   group_id 컬럼을 추가하고, 이미 있던 todos/chat_messages 레코드를 "기본 그룹"으로 이관한다.
+   group_id 컬럼과 FK 제약을 추가하고, 이미 있던 레코드를 모두 "기본 그룹"으로 이관한다.
+
+schedules/documents의 group_id는 앞으로 "전사 공용"을 뜻하는 NULL을 허용하지만,
+마이그레이션 이전 데이터는 전사 공용이 아니라 기존 사용자들이 쓰던 데이터이므로
+기본 그룹으로 백필한다. 백필하지 않으면 documents는 list_documents 쿼리
+(group_id = :gid OR (is_template AND group_id IS NULL))의 어느 쪽에도 걸리지 않아
+영구히 보이지 않게 되고, schedules는 관리자만 수정/삭제할 수 있게 되어
+마이그레이션 전 동작이 바뀐다.
 """
 
 from sqlalchemy import select, text
@@ -43,6 +50,31 @@ def _add_missing_columns() -> None:
             )
 
 
+def _constraint_exists(conn, table: str, constraint: str) -> bool:
+    result = conn.execute(
+        text(
+            "SELECT 1 FROM information_schema.table_constraints "
+            "WHERE table_name = :table AND constraint_name = :constraint"
+        ),
+        {"table": table, "constraint": constraint},
+    )
+    return result.first() is not None
+
+
+def _add_missing_foreign_keys() -> None:
+    with engine.begin() as conn:
+        for table in ("todos", "chat_messages", "schedules", "documents"):
+            constraint = f"fk_{table}_group_id"
+            if _constraint_exists(conn, table, constraint):
+                continue
+            conn.execute(
+                text(
+                    f"ALTER TABLE {table} ADD CONSTRAINT {constraint} "
+                    "FOREIGN KEY (group_id) REFERENCES groups(id)"
+                )
+            )
+
+
 def _backfill_default_group() -> int | None:
     db = SessionLocal()
     try:
@@ -69,6 +101,14 @@ def _backfill_default_group() -> int | None:
             text("UPDATE chat_messages SET group_id = :gid WHERE group_id IS NULL"),
             {"gid": default_group.id},
         )
+        db.execute(
+            text("UPDATE schedules SET group_id = :gid WHERE group_id IS NULL"),
+            {"gid": default_group.id},
+        )
+        db.execute(
+            text("UPDATE documents SET group_id = :gid WHERE group_id IS NULL"),
+            {"gid": default_group.id},
+        )
         db.commit()
         return default_group.id
     finally:
@@ -76,6 +116,7 @@ def _backfill_default_group() -> int | None:
 
 
 def _enforce_not_null() -> None:
+    """schedules/documents는 앞으로 NULL(전사 공용)을 허용해야 하므로 제외한다."""
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE todos ALTER COLUMN group_id SET NOT NULL"))
         conn.execute(text("ALTER TABLE chat_messages ALTER COLUMN group_id SET NOT NULL"))
@@ -83,6 +124,7 @@ def _enforce_not_null() -> None:
 
 def main() -> None:
     _add_missing_columns()
+    _add_missing_foreign_keys()
     default_group_id = _backfill_default_group()
     if default_group_id is None:
         return
