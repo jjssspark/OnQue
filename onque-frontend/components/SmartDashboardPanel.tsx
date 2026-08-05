@@ -20,7 +20,7 @@ export function SmartDashboardPanel() {
 
       <section className="border-b border-border px-5 py-4">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-xs font-bold text-foreground/70">✅ 할 일 {openTodos.length}</h3>
+          <h3 className="text-xs font-bold text-foreground/70">할 일 {openTodos.length}</h3>
         </div>
         {loading && <p className="text-xs text-foreground/40">불러오는 중...</p>}
         {!loading && openTodos.length === 0 && (
@@ -55,7 +55,7 @@ export function SmartDashboardPanel() {
       </section>
 
       <section className="px-5 py-4">
-        <h3 className="mb-3 text-xs font-bold text-foreground/70">📅 일정 {schedules.length}</h3>
+        <h3 className="mb-3 text-xs font-bold text-foreground/70">일정 {schedules.length}</h3>
         {!loading && schedules.length === 0 && (
           <p className="text-xs text-foreground/40">등록된 일정이 없습니다.</p>
         )}

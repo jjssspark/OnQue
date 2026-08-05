@@ -45,7 +45,10 @@ export function UploadPanel({
   };
 
   const handleUpload = async () => {
-    if (!file) return alert(emptySelectionMessage);
+    if (!file) {
+      setErrorMsg(emptySelectionMessage);
+      return;
+    }
     if (currentGroupId === null) return;
 
     setLoading(true);

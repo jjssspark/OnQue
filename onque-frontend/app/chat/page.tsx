@@ -70,7 +70,7 @@ export default function ChatPage() {
         <h1 className="mt-1 text-2xl font-bold text-foreground">팀 채팅</h1>
         <p className="mt-2 text-sm text-foreground/60">
           메시지를 보내면 <span className="font-semibold text-brand">@비서</span>가 대화를 지켜보다가
-          할 일·일정을 자동으로 정리합니다. <span className="font-mono">@비서</span>를 직접 불러 물어볼 수도 있어요.
+          할 일·일정을 자동으로 정리합니다. <span className="font-mono">@비서</span>를 직접 불러 물어볼 수도 있습니다.
         </p>
       </div>
 
