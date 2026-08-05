@@ -15,7 +15,7 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   {
-    href: '/',
+    href: '/dashboard',
     label: '대시보드',
     description: '업무 현황 한눈에',
     icon: (
@@ -101,7 +101,7 @@ export function Sidebar() {
       <nav className="flex-1 px-3 py-5 space-y-1">
         {NAV_ITEMS.map((item) => {
           const isActive =
-            item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+            item.href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(item.href);
 
           return (
             <Link
@@ -132,7 +132,7 @@ export function Sidebar() {
                   {item.description}
                 </span>
               </span>
-              {item.href === '/' && openTodoCount > 0 && (
+              {item.href === '/dashboard' && openTodoCount > 0 && (
                 <span className="mt-0.5 shrink-0 rounded-full bg-brand px-1.5 py-0.5 text-[10px] font-bold text-brand-foreground">
                   {openTodoCount}
                 </span>

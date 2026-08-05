@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/components/AuthContext';
+import { AuthLayout } from '@/components/AuthLayout';
 
 export default function SignupPage() {
   const { signup } = useAuth();
@@ -26,18 +27,26 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6">
-      <h1 className="text-xl font-bold text-foreground">
-        On<span className="text-brand">Que</span> 회원가입
-      </h1>
-      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+    <AuthLayout
+      title="회원가입"
+      subtitle="새 계정을 만들고 워크스페이스를 시작하세요."
+      footer={
+        <p className="text-center text-xs text-foreground/60">
+          이미 계정이 있으신가요?{' '}
+          <Link href="/login" className="font-semibold text-brand">
+            로그인
+          </Link>
+        </p>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
         <input
           type="text"
           required
           placeholder="이름"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+          className="w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm"
         />
         <input
           type="email"
@@ -45,7 +54,7 @@ export default function SignupPage() {
           placeholder="이메일"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+          className="w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm"
         />
         <input
           type="password"
@@ -54,20 +63,17 @@ export default function SignupPage() {
           placeholder="비밀번호 (8자 이상)"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+          className="w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm"
         />
         {error && <p className="text-xs text-red-500">{error}</p>}
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-lg bg-brand py-2 text-sm font-semibold text-brand-foreground disabled:opacity-50"
+          className="w-full rounded-lg bg-brand py-2.5 text-sm font-semibold text-brand-foreground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? '가입 중...' : '가입하기'}
         </button>
       </form>
-      <p className="mt-4 text-center text-xs text-foreground/60">
-        이미 계정이 있으신가요? <Link href="/login" className="text-brand">로그인</Link>
-      </p>
-    </div>
+    </AuthLayout>
   );
 }

@@ -58,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const result = await apiLogin(email, password);
       setToken(result.token);
       await refreshMe();
-      router.push('/');
+      router.push('/dashboard');
     },
     [refreshMe, router]
   );
@@ -68,7 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const result = await apiSignup(email, password, name);
       setToken(result.token);
       await refreshMe();
-      router.push('/');
+      router.push('/dashboard');
     },
     [refreshMe, router]
   );

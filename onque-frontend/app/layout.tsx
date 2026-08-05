@@ -1,9 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Sidebar } from "@/components/Sidebar";
-import { MobileNav } from "@/components/MobileNav";
-import { SmartDashboardPanel } from "@/components/SmartDashboardPanel";
 import { WorkspaceProvider } from "@/components/WorkspaceContext";
 import { AuthProvider } from "@/components/AuthContext";
 import { AuthGuard } from "@/components/AuthGuard";
@@ -35,16 +32,7 @@ export default function RootLayout({
       >
         <AuthProvider>
           <WorkspaceProvider>
-            <AuthGuard>
-              <div className="flex min-h-screen">
-                <Sidebar />
-                <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-                  <MobileNav />
-                  <main className="flex-1 overflow-y-auto">{children}</main>
-                </div>
-                <SmartDashboardPanel />
-              </div>
-            </AuthGuard>
+            <AuthGuard>{children}</AuthGuard>
           </WorkspaceProvider>
         </AuthProvider>
       </body>

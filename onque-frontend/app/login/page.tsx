@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/components/AuthContext';
+import { AuthLayout } from '@/components/AuthLayout';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -25,18 +26,26 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-6">
-      <h1 className="text-xl font-bold text-foreground">
-        On<span className="text-brand">Que</span> 로그인
-      </h1>
-      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+    <AuthLayout
+      title="로그인"
+      subtitle="계정 정보를 입력해 워크스페이스에 접속하세요."
+      footer={
+        <p className="text-center text-xs text-foreground/60">
+          계정이 없으신가요?{' '}
+          <Link href="/signup" className="font-semibold text-brand">
+            회원가입
+          </Link>
+        </p>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
         <input
           type="email"
           required
           placeholder="이메일"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+          className="w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm"
         />
         <input
           type="password"
@@ -44,20 +53,17 @@ export default function LoginPage() {
           placeholder="비밀번호"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+          className="w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm"
         />
         {error && <p className="text-xs text-red-500">{error}</p>}
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-lg bg-brand py-2 text-sm font-semibold text-brand-foreground disabled:opacity-50"
+          className="w-full rounded-lg bg-brand py-2.5 text-sm font-semibold text-brand-foreground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? '로그인 중...' : '로그인'}
         </button>
       </form>
-      <p className="mt-4 text-center text-xs text-foreground/60">
-        계정이 없으신가요? <Link href="/signup" className="text-brand">회원가입</Link>
-      </p>
-    </div>
+    </AuthLayout>
   );
 }

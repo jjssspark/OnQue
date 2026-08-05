@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const NAV_ITEMS = [
-  { href: '/', label: '대시보드' },
+  { href: '/dashboard', label: '대시보드' },
   { href: '/calls', label: '통화 요약' },
   { href: '/documents', label: '문서·회의록' },
   { href: '/chat', label: '팀 채팅' },
@@ -24,7 +24,7 @@ export function MobileNav() {
       <nav className="flex gap-1 overflow-x-auto px-3 pb-2">
         {NAV_ITEMS.map((item) => {
           const isActive =
-            item.href === '/' ? pathname === '/' : pathname.startsWith(item.href);
+            item.href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(item.href);
           return (
             <Link
               key={item.href}
