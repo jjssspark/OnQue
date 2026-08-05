@@ -8,7 +8,7 @@ import { MobileNav } from '@/components/MobileNav';
 import { SmartDashboardPanel } from '@/components/SmartDashboardPanel';
 
 const PUBLIC_PATHS = ['/', '/login', '/signup'];
-const MIN_SPLASH_MS = 700;
+const MIN_SPLASH_MS = 2500;
 
 function SplashScreen() {
   return (
