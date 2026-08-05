@@ -1,5 +1,26 @@
+import { getToken } from './auth-storage';
+
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000';
+
+export type AuthUser = {
+  id: number;
+  email: string;
+  name: string;
+  role: 'admin' | 'member';
+};
+
+export type GroupSummary = {
+  id: number;
+  name: string;
+};
+
+export type MeResponse = {
+  user: AuthUser;
+  groups: GroupSummary[];
+};
+
+type Envelope<T> = { success: boolean; data: T; error: { code: string; message: string } | null };
 
 export type SummaryResponse = {
   id: number;
@@ -48,27 +69,39 @@ export type ChatSendResult = {
 };
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: options?.body ? { 'Content-Type': 'application/json' } : undefined,
-    ...options,
-  });
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (options?.body) headers['Content-Type'] = 'application/json';
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
 
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.detail || '요청이 실패했습니다.');
+    const message = body?.error?.message || body?.detail || '요청이 실패했습니다.';
+    throw new Error(message);
   }
 
   if (res.status === 204) return undefined as T;
   return res.json();
 }
 
+async function requestEnveloped<T>(path: string, options?: RequestInit): Promise<T> {
+  const envelope = await request<Envelope<T>>(path, options);
+  return envelope.data;
+}
+
 async function postFile(path: string, file: File): Promise<SummaryResponse> {
   const formData = new FormData();
   formData.append('file', file);
+  const token = getToken();
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
     body: formData,
+    headers,
   });
 
   if (!res.ok) {
@@ -124,4 +157,22 @@ export function sendChatMessage(sender: string, content: string): Promise<ChatSe
     method: 'POST',
     body: JSON.stringify({ sender, content }),
   });
+}
+
+export function signup(email: string, password: string, name: string): Promise<{ user: AuthUser; token: string }> {
+  return requestEnveloped('/api/v1/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({ email, password, name }),
+  });
+}
+
+export function login(email: string, password: string): Promise<{ user: AuthUser; token: string }> {
+  return requestEnveloped('/api/v1/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function getMe(): Promise<MeResponse> {
+  return requestEnveloped('/api/v1/me');
 }

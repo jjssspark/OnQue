@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { MobileNav } from "@/components/MobileNav";
 import { SmartDashboardPanel } from "@/components/SmartDashboardPanel";
 import { WorkspaceProvider } from "@/components/WorkspaceContext";
+import { AuthProvider } from "@/components/AuthContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -31,16 +32,18 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <WorkspaceProvider>
-          <div className="flex min-h-screen">
-            <Sidebar />
-            <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-              <MobileNav />
-              <main className="flex-1 overflow-y-auto">{children}</main>
+        <AuthProvider>
+          <WorkspaceProvider>
+            <div className="flex min-h-screen">
+              <Sidebar />
+              <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+                <MobileNav />
+                <main className="flex-1 overflow-y-auto">{children}</main>
+              </div>
+              <SmartDashboardPanel />
             </div>
-            <SmartDashboardPanel />
-          </div>
-        </WorkspaceProvider>
+          </WorkspaceProvider>
+        </AuthProvider>
       </body>
     </html>
   );
