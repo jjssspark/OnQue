@@ -5,3 +5,7 @@ google-genai==2.16.0
 python-multipart==0.0.20
 sqlalchemy==2.0.44
 psycopg[binary]==3.2.10
+bcrypt==5.0.0
+pyjwt==2.13.0
+pytest==9.1.1
+httpx==0.28.1
