@@ -36,8 +36,9 @@ function dueLabel(dueDate: string, todayKey: string): { text: string; alert: boo
 
 export default function DashboardPage() {
   const { user, groups } = useAuth();
-  const { todos, schedules, currentGroupId, toggleTodo } = useWorkspace();
+  const { todos, schedules, currentGroupId, toggleTodo, error: workspaceError } = useWorkspace();
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
 
   // 날짜 계산을 마운트 이후로 미룬다 — 서버와 클라이언트의 시각이 달라 생기는
   // 하이드레이션 불일치를 피하기 위해서다.
@@ -47,11 +48,20 @@ export default function DashboardPage() {
   useEffect(() => {
     if (currentGroupId === null) {
       setDocuments([]);
+      setDocumentsError(null);
       return;
     }
     getDocuments(currentGroupId)
-      .then(setDocuments)
-      .catch(() => setDocuments([]));
+      .then((docs) => {
+        setDocuments(docs);
+        setDocumentsError(null);
+      })
+      .catch((err: unknown) => {
+        setDocuments([]);
+        setDocumentsError(
+          err instanceof Error ? err.message : '요약 이력을 불러오지 못했습니다.',
+        );
+      });
   }, [currentGroupId]);
 
   const todayKey = today ? toDateKey(today) : null;
@@ -119,6 +129,23 @@ export default function DashboardPage() {
           {todayKey && ` · ${todayKey}`}
         </p>
       </div>
+
+      {(workspaceError || documentsError) && (
+        <div
+          role="alert"
+          className="mt-5 rounded-xl border border-red-500/25 bg-red-500/[0.06] px-4 py-3 text-sm text-red-600 dark:text-red-400"
+        >
+          <p className="font-semibold">일부 데이터를 불러오지 못했습니다.</p>
+          <p className="mt-1 text-xs leading-relaxed opacity-80">
+            아래 수치와 목록이 비어 보이는 것은 실제로 항목이 없어서가 아니라 조회에 실패했기
+            때문일 수 있습니다.
+          </p>
+          <ul className="mt-2 space-y-0.5 font-mono text-[11px] opacity-70">
+            {workspaceError && <li>할 일·일정: {workspaceError}</li>}
+            {documentsError && <li>요약 이력: {documentsError}</li>}
+          </ul>
+        </div>
+      )}
 
       <div className="mt-6">
         <MetricStrip metrics={metrics} />

@@ -21,6 +21,7 @@
 
 | ID | 날짜 | 영역 | 문제 | 심각도 | 상태 |
 |---|---|---|---|---|---|
+| TS-016 | 2026-08-05 | Infra/DB | 프로덕션 DB의 4개 테이블이 그룹 기능 이전 스키마에 머물러 할 일·일정·채팅·문서가 전부 실패 중이었으나, 프론트엔드가 오류를 삼켜 정상으로 보임 | High | 해결됨 |
 | TS-015 | 2026-08-05 | BE/UX | 요약 리포트의 이모지가 프론트엔드를 아무리 고쳐도 사라지지 않음 — 출처가 백엔드 LLM 프롬프트였음 | Medium | 해결됨 |
 | TS-014 | 2026-08-05 | Infra/Auth | 배포된 앱에서 로그인이 무한 대기 — Render 무료 티어 콜드스타트(54초) + 백엔드 구버전 배포 + `render.yaml`에 `JWT_SECRET` 누락이 겹침 | High | 해결됨 |
 | TS-013 | 2026-08-05 | BE | pytest용 SQLite 인메모리 DB가 FastAPI 워커 스레드에서 `no such table` 에러 (StaticPool 누락) | Medium | 해결됨 |
@@ -43,6 +44,115 @@
 ---
 
 ## 기록
+
+## TS-016 · 프로덕션 DB가 구스키마에 머물러 4개 기능이 죽어 있었으나 화면상 정상으로 보임
+
+| | |
+|---|---|
+| **날짜** | 2026-08-05 |
+| **영역** | Infra / DB / UX |
+| **심각도** | High |
+| **상태** | 해결됨 |
+| **소요 시간** | 약 15분 (발견 후 조치) |
+
+### 증상
+
+`Document.summary_json` 컬럼을 추가하고 배포한 뒤, Neon에 컬럼이 실제로 생겼는지 확인하려고 스키마를 조회했다. 그 과정에서 **의도치 않게 훨씬 큰 문제가 드러났다.**
+
+```
+documents 컬럼: ['id', 'source_type', 'category', 'filename', 'summary', 'created_at']
+```
+
+`group_id`도 `is_template`도 없었다. 그룹 기능 도입 전 스키마 그대로였다. 전체 테이블을 조회하니 4개가 같은 상태였다.
+
+```
+chat_messages (행 0): ['id', 'sender', 'content', 'is_bot', 'created_at']
+documents     (행 0): ['id', 'source_type', 'category', 'filename', 'summary', 'created_at']
+schedules     (행 0): ['id', 'title', 'scheduled_date', 'created_at', 'updated_at']
+todos         (행 0): ['id', 'content', 'due_date', 'is_done', 'created_at', 'updated_at']
+
+announcements     (행 0): 정상
+groups            (행 1): 정상
+group_memberships (행 1): 정상
+users             (행 1): 정상
+```
+
+즉 배포된 앱에서 **할 일·일정·채팅·문서 관련 요청이 이미 전부 실패하고 있었다.** 이 코드들은 모두 `WHERE group_id = ...`로 조회한다.
+
+### 재현 조건
+
+1. 그룹 기능 도입 이전에 생성된 Neon 인스턴스를 그대로 사용
+2. 그룹 기능이 포함된 백엔드를 배포 (`Base.metadata.create_all(bind=engine)` 실행됨)
+3. 로그인 → 대시보드 진입
+
+### 원인
+
+**표면**: 브라우저로 확인했을 때 로그인·그룹 생성·공지 등록이 모두 정상 동작해 배포가 성공한 것으로 판단했다.
+
+**근본 (두 겹)**
+
+첫째, **`Base.metadata.create_all()`은 없는 테이블만 만들고, 이미 존재하는 테이블에는 컬럼을 추가하지 않는다.** 이름이 "create_all"이라 전체를 최신 상태로 맞춰줄 것처럼 읽히지만 실제 동작은 `CREATE TABLE IF NOT EXISTS`에 가깝다. 마이그레이션 도구(Alembic 등) 없이 이것만 쓰면, 모델에 컬럼을 추가해도 기존 테이블은 영원히 옛 모양으로 남는다.
+
+둘째, **프론트엔드가 그 실패를 조용히 삼켰다.** `WorkspaceContext.refresh()`의 `catch`는 주석까지 달아 의도적으로 침묵하고 있었고, 대시보드의 문서 조회도 `.catch(() => setDocuments([]))`였다.
+
+```ts
+} catch {
+  // 대시보드 패널은 조용히 실패한다 — 원인 파악은 채팅/업로드 화면의 에러 메시지에서 이뤄진다.
+}
+```
+
+그 결과 화면에서 **"항목이 0개"와 "요청이 실패함"이 완전히 동일하게 보였다.** 신규 배포라 데이터가 없는 게 자연스러운 상황이었기 때문에, 빈 목록을 정상으로 읽고 넘어갔다.
+
+### 시도했지만 안 된 것
+
+- **브라우저 E2E 확인**: 로그인 → 대시보드 → 그룹 생성 → 공지 등록을 실제로 수행하고 "검증 완료"로 판단했다. 하필 정상 동작한 네 가지(`users`, `groups`, `group_memberships`, `announcements`)가 모두 스키마가 맞는 테이블이었고, 깨진 네 가지는 전부 침묵하는 경로였다. **UI 관찰만으로는 이 장애를 잡을 수 없었다.**
+- 컬럼 추가 후 "`create_all`이 처리하겠지"라고 가정한 것 — 실제로는 `ALTER TABLE`을 하지 않는다.
+
+### 해결
+
+대상 4개 테이블이 모두 **행 0개**임을 먼저 확인한 뒤(참조하는 외래키도 없음) 삭제하고 현재 모델로 재생성했다. 행이 0이 아니면 중단하도록 assert를 걸고 실행했다.
+
+```python
+with engine.begin() as c:
+    for t in ['chat_messages', 'documents', 'schedules', 'todos']:
+        n = c.execute(text(f'SELECT count(*) FROM {t}')).scalar()
+        assert n == 0, f'{t}에 {n}행이 있어 중단'
+        c.execute(text(f'DROP TABLE {t}'))
+
+Base.metadata.create_all(bind=engine)
+```
+
+`users`·`groups`·`group_memberships`는 실제 계정 데이터가 있어 건드리지 않았다.
+
+동시에 **침묵하던 예외 처리를 걷어냈다.**
+- `WorkspaceContext`에 `error: string | null`을 추가하고 `refresh()`의 `catch`가 이를 설정하도록 변경
+- `SmartDashboardPanel`과 대시보드에 경고 배너 추가 — "비어 있는 것이 아니라 조회에 실패한 상태"라고 명시
+
+### 검증
+
+```
+chat_messages ['id', 'group_id', 'sender', 'content', 'is_bot', 'created_at']
+documents     ['id', 'group_id', 'is_template', 'source_type', 'category', 'filename',
+               'summary', 'summary_json', 'created_at']
+schedules     ['id', 'group_id', 'title', 'scheduled_date', 'created_at', 'updated_at']
+todos         ['id', 'group_id', 'content', 'due_date', 'is_done', 'created_at', 'updated_at']
+```
+
+`pytest` 50건 / `tsc --noEmit` / `next build` 모두 통과.
+
+### 추후 관리
+
+- **`create_all`만으로는 스키마 변경을 배포할 수 없다.** 모델에 컬럼을 추가할 때마다 수동 `ALTER TABLE`이 필요하며, 지금처럼 놓치기 쉽다. 데이터가 쌓이기 시작하면 Alembic 도입이 사실상 필수다. (현재는 데이터가 거의 없어 drop & recreate로 넘어감)
+- 배포 후 확인 항목에 **DB 스키마 대조**를 넣어야 한다. UI 관찰로는 침묵하는 실패를 못 잡는다.
+- 남아 있는 조용한 `catch`가 더 있는지 주기적으로 점검할 것.
+
+### 배운 점
+
+**빈 화면은 "데이터가 없다"는 뜻이 아니라 "아무것도 모른다"는 뜻이다.** 신규 배포 직후처럼 빈 상태가 자연스러운 상황에서는 이 둘을 구분할 단서가 화면에 전혀 없다. 오류를 삼키는 `catch`는 그 순간에는 화면을 깔끔하게 만들어주지만, 정확히 장애를 발견해야 할 때 발견을 막는다.
+
+그리고 **"E2E로 확인했다"는 확인한 경로에 대해서만 참이다.** 이번엔 정상 동작한 기능들이 우연히 전부 스키마가 맞는 쪽이었고, 깨진 쪽은 전부 침묵했다. 확인했다고 말하기 전에 "무엇을 확인했고 무엇을 확인하지 않았는가"를 나눠서 봐야 한다.
+
+---
 
 ## TS-015 · 요약 리포트의 이모지가 프론트엔드 수정으로 사라지지 않음 (출처가 LLM 프롬프트)
 

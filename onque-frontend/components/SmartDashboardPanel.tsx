@@ -7,7 +7,8 @@ function formatDate(iso: string): string {
 }
 
 export function SmartDashboardPanel() {
-  const { todos, schedules, loading, toggleTodo, removeTodo, removeSchedule } = useWorkspace();
+  const { todos, schedules, loading, error, toggleTodo, removeTodo, removeSchedule } =
+    useWorkspace();
   const openTodos = todos.filter((t) => !t.is_done);
   const doneTodos = todos.filter((t) => t.is_done);
 
@@ -17,6 +18,17 @@ export function SmartDashboardPanel() {
         <p className="font-mono text-xs uppercase tracking-widest text-brand">Smart Dashboard</p>
         <h2 className="mt-1 text-sm font-bold text-foreground">실시간 업무 현황</h2>
       </div>
+
+      {error && (
+        <p
+          role="alert"
+          className="border-b border-red-500/20 bg-red-500/[0.06] px-5 py-3 text-xs leading-relaxed text-red-600 dark:text-red-400"
+        >
+          업무 데이터를 불러오지 못했습니다. 아래 목록은 비어 있는 것이 아니라 조회에 실패한
+          상태입니다.
+          <span className="mt-1 block font-mono text-[10px] opacity-70">{error}</span>
+        </p>
+      )}
 
       <section className="border-b border-border px-5 py-4">
         <div className="mb-3 flex items-center justify-between">

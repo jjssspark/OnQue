@@ -18,6 +18,8 @@ type WorkspaceContextValue = {
   todos: Todo[];
   schedules: ScheduleItem[];
   loading: boolean;
+  /** 조회 실패 사유. 빈 목록과 실패를 화면에서 구분하기 위해 필요하다. */
+  error: string | null;
   currentGroupId: number | null;
   setCurrentGroupId: (id: number) => void;
   refresh: () => Promise<void>;
@@ -34,6 +36,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [currentGroupId, setCurrentGroupIdState] = useState<number | null>(null);
 
   useEffect(() => {
@@ -56,6 +59,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (currentGroupId === null) {
       setTodos([]);
       setSchedules([]);
+      setError(null);
       setLoading(false);
       return;
     }
@@ -66,8 +70,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       ]);
       setTodos(nextTodos);
       setSchedules(nextSchedules);
-    } catch {
-      // 대시보드 패널은 조용히 실패한다 — 원인 파악은 채팅/업로드 화면의 에러 메시지에서 이뤄진다.
+      setError(null);
+    } catch (err) {
+      // 조용히 넘기면 "데이터 없음"과 구분되지 않아 서버 장애가 화면상 정상으로 보인다.
+      setError(err instanceof Error ? err.message : '업무 데이터를 불러오지 못했습니다.');
     } finally {
       setLoading(false);
     }
@@ -103,6 +109,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         todos,
         schedules,
         loading,
+        error,
         currentGroupId,
         setCurrentGroupId,
         refresh,
