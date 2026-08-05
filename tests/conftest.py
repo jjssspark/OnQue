@@ -48,3 +48,15 @@ def client():
 
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=TEST_ENGINE)
+
+
+@pytest.fixture()
+def db_session(client):
+    """Direct DB session sharing the same in-memory engine as `client`, for
+    seeding rows that the HTTP API has no endpoint to create (e.g. a Todo
+    inserted directly rather than extracted from a chat message)."""
+    session = TestSessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()

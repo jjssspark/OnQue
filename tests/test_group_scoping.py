@@ -1,3 +1,6 @@
+from models import Todo
+
+
 def _setup_two_groups(client):
     admin_token = client.post(
         "/api/v1/auth/signup",
@@ -18,22 +21,48 @@ def test_todos_requires_group_id(client):
     assert res.status_code == 422
 
 
-def test_todos_isolated_between_groups(client):
+def test_todos_isolated_between_groups(client, db_session):
     admin_token, group_a, group_b = _setup_two_groups(client)
-    client.post(
-        "/chat/messages",
-        params={"group_id": group_a},
-        json={"sender": "관리자", "content": "할일: A팀 킥오프 준비"},
-        headers={"Authorization": f"Bearer {admin_token}"},
-    )
+    # Seed a todo directly — chat-based extraction depends on gemini_service,
+    # which is not exercised in the test environment (GOOGLE_API_KEY="test-key").
+    db_session.add(Todo(group_id=group_a, content="A팀 킥오프 준비"))
+    db_session.commit()
+
     res_a = client.get(
         "/todos", params={"group_id": group_a}, headers={"Authorization": f"Bearer {admin_token}"}
     )
     res_b = client.get(
         "/todos", params={"group_id": group_b}, headers={"Authorization": f"Bearer {admin_token}"}
     )
-    assert len(res_a.json()) >= 0
+    assert [t["content"] for t in res_a.json()] == ["A팀 킥오프 준비"]
     assert res_b.json() == []
+
+
+def test_todo_patch_rejects_cross_group_access(client, db_session):
+    admin_token, group_a, group_b = _setup_two_groups(client)
+    todo = Todo(group_id=group_b, content="B팀 전용 할 일")
+    db_session.add(todo)
+    db_session.commit()
+    db_session.refresh(todo)
+
+    member_signup = client.post(
+        "/api/v1/auth/signup",
+        json={"email": "a-member@onque.dev", "password": "password123", "name": "A팀원"},
+    ).json()["data"]
+    member_token = member_signup["token"]
+    client.post(
+        f"/api/v1/groups/{group_a}/members",
+        json={"user_id": member_signup["user"]["id"]},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+
+    res = client.patch(
+        f"/todos/{todo.id}",
+        json={"is_done": True},
+        headers={"Authorization": f"Bearer {member_token}"},
+    )
+    assert res.status_code == 403
+    assert res.json()["error"]["code"] == "GROUP_ACCESS_FORBIDDEN"
 
 
 def test_todos_rejects_non_member(client):

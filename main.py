@@ -181,7 +181,10 @@ def list_documents(
     _require_group_member(current_user, group_id, db)
     docs = db.scalars(
         select(Document)
-        .where((Document.group_id == group_id) | (Document.is_template.is_(True)))
+        .where(
+            (Document.group_id == group_id)
+            | ((Document.is_template.is_(True)) & (Document.group_id.is_(None)))
+        )
         .order_by(Document.created_at.desc())
         .limit(100)
     ).all()
@@ -199,6 +202,11 @@ def delete_document(
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
     if doc.group_id is not None:
         _require_group_member(current_user, doc.group_id, db)
+    elif current_user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "DOCUMENT_DELETE_FORBIDDEN", "message": "전사 공유 문서는 관리자만 삭제할 수 있습니다."},
+        )
     db.delete(doc)
     db.commit()
     return {"deleted": True}
@@ -310,7 +318,10 @@ def create_schedule(
         )
     scheduled = _parse_date(body.scheduled_date)
     if not scheduled:
-        raise HTTPException(status_code=400, detail="scheduled_date 형식이 올바르지 않습니다. (YYYY-MM-DD)")
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "SCHEDULE_DATE_INVALID", "message": "scheduled_date 형식이 올바르지 않습니다. (YYYY-MM-DD)"},
+        )
     schedule = Schedule(group_id=body.group_id, title=body.title, scheduled_date=scheduled)
     db.add(schedule)
     db.commit()
