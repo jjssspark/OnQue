@@ -13,8 +13,8 @@ import {
 type ChatWindowProps = {
   room: ChatRoomRecord;
   onClose: () => void;
-  /** 목록의 마지막 메시지 미리보기를 갱신하기 위해 부모에 알린다. */
-  onMessageSent: (roomId: number, message: ChatMessageRecord) => void;
+  /** 목록의 미리보기와 AI 상태를 갱신하기 위해 부모에 알린다. */
+  onMessageSent: (roomId: number, message: ChatMessageRecord, aiMode: boolean) => void;
 };
 
 function formatTime(iso: string): string {
@@ -27,6 +27,7 @@ export function ChatWindow({ room, onClose, onMessageSent }: ChatWindowProps) {
   const senderName = user?.name ?? '나';
 
   const [messages, setMessages] = useState<ChatMessageRecord[]>([]);
+  const [aiMode, setAiMode] = useState(room.ai_mode);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -81,7 +82,8 @@ export function ChatWindow({ room, onClose, onMessageSent }: ChatWindowProps) {
         ...(result.bot_message ? [result.bot_message] : []),
       ]);
       applySnapshot(result.todos, result.schedules);
-      onMessageSent(room.id, result.bot_message ?? result.message);
+      setAiMode(result.ai_mode);
+      onMessageSent(room.id, result.bot_message ?? result.message, result.ai_mode);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : '메시지 전송에 실패했습니다.');
       // 실패한 입력을 되돌려줘야 사용자가 다시 타이핑하지 않는다.
@@ -107,19 +109,31 @@ export function ChatWindow({ room, onClose, onMessageSent }: ChatWindowProps) {
 
       <div className="relative flex h-full w-full flex-col overflow-hidden border border-white/10 bg-surface shadow-2xl [animation:chat-pop_0.28s_cubic-bezier(0.16,1,0.3,1)] sm:h-[min(85vh,720px)] sm:max-w-lg sm:rounded-2xl">
         <div
-          className="pointer-events-none absolute -top-24 left-1/2 h-56 w-56 -translate-x-1/2 rounded-full bg-brand/25 blur-[90px]"
+          className={`pointer-events-none absolute -top-24 left-1/2 h-56 w-56 -translate-x-1/2 rounded-full blur-[90px] transition-opacity duration-500 ${
+            aiMode ? 'bg-brand/40' : 'bg-brand/15'
+          }`}
           aria-hidden
         />
 
-        <header className="relative flex items-center justify-between gap-3 border-b border-border px-5 py-4">
+        <header
+          className={`relative flex items-center justify-between gap-3 border-b px-5 py-4 transition-colors ${
+            aiMode ? 'border-brand/40 bg-brand/[0.06]' : 'border-border'
+          }`}
+        >
           <div className="min-w-0">
             <h2 id="chat-window-title" className="truncate text-sm font-bold text-foreground">
               {room.name}
             </h2>
-            <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] text-foreground/40">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" aria-hidden />
-              비서 대기 중
-            </p>
+            {aiMode ? (
+              <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] font-semibold text-brand">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" aria-hidden />
+                AI 비서 참여 중 · /exit 로 내보내기
+              </p>
+            ) : (
+              <p className="mt-0.5 font-mono text-[11px] text-foreground/40">
+                사람들끼리의 대화 · /help 로 AI 부르기
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -148,8 +162,10 @@ export function ChatWindow({ room, onClose, onMessageSent }: ChatWindowProps) {
             <div className="rounded-xl border border-dashed border-border px-5 py-8 text-center">
               <p className="text-sm text-foreground/50">아직 대화가 없습니다.</p>
               <p className="mt-2 text-xs leading-relaxed text-foreground/35">
-                &quot;@비서 내일까지 견적서 제출해야 하는데 일정 잡아줘&quot; 처럼 말을 걸면
-                <br />할 일과 일정이 자동으로 정리됩니다.
+                팀원과 편하게 대화하세요. AI가 필요해지면
+                <br />
+                <span className="font-mono text-brand">/help</span> 를 입력해 비서를 부를 수
+                있습니다.
               </p>
             </div>
           )}
@@ -192,7 +208,11 @@ export function ChatWindow({ room, onClose, onMessageSent }: ChatWindowProps) {
           </p>
         )}
 
-        <div className="relative border-t border-border p-3">
+        <div
+          className={`relative border-t p-3 transition-colors ${
+            aiMode ? 'border-brand/40 bg-brand/[0.04]' : 'border-border'
+          }`}
+        >
           <div className="flex items-end gap-2">
             <input
               ref={inputRef}
@@ -205,9 +225,13 @@ export function ChatWindow({ room, onClose, onMessageSent }: ChatWindowProps) {
                   handleSend();
                 }
               }}
-              placeholder="메시지를 입력하세요. @비서 를 붙이면 답합니다."
+              placeholder={
+                aiMode ? '비서에게 말하거나 /exit 로 내보내기' : '메시지 입력 · /help 로 AI 부르기'
+              }
               disabled={sending}
-              className="flex-1 rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-foreground/30 focus:border-brand focus:outline-none disabled:opacity-60"
+              className={`flex-1 rounded-xl border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-foreground/30 focus:outline-none disabled:opacity-60 ${
+                aiMode ? 'border-brand/50 focus:border-brand' : 'border-border focus:border-brand'
+              }`}
             />
             <button
               type="button"

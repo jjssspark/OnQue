@@ -138,6 +138,8 @@ class ChatRoom(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     group_id: Mapped[int] = mapped_column(ForeignKey("groups.id"), nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
+    # 기본은 사람끼리의 대화다. /help로 부를 때만 AI가 들어온다.
+    ai_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

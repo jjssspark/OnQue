@@ -85,9 +85,14 @@ export default function ChatPage() {
     }
   };
 
-  const handleMessageSent = useCallback((roomId: number, message: ChatMessageRecord) => {
-    setRooms((prev) => prev.map((r) => (r.id === roomId ? { ...r, last_message: message } : r)));
-  }, []);
+  const handleMessageSent = useCallback(
+    (roomId: number, message: ChatMessageRecord, aiMode: boolean) => {
+      setRooms((prev) =>
+        prev.map((r) => (r.id === roomId ? { ...r, last_message: message, ai_mode: aiMode } : r)),
+      );
+    },
+    [],
+  );
 
   if (currentGroupId === null) {
     return (
@@ -108,9 +113,9 @@ export default function ChatPage() {
         <p className="font-mono text-xs uppercase tracking-widest text-brand">Team Chat</p>
         <h1 className="mt-1 text-2xl font-bold text-foreground">팀 채팅</h1>
         <p className="mt-2 text-sm leading-relaxed text-foreground/55">
-          주제별로 방을 나눠 쓰세요. 어느 방에서든{' '}
-          <span className="font-mono text-brand">@비서</span>가 대화를 지켜보다가 할 일과 일정을
-          자동으로 정리합니다.
+          주제별로 방을 나눠 팀원과 대화하세요. AI는 평소엔 끼어들지 않고,{' '}
+          <span className="font-mono text-brand">/help</span> 로 부를 때만 들어와 요약·문서 작성·할
+          일 등록을 대신합니다.
         </p>
 
         <form onSubmit={handleCreate} className="mt-6 flex gap-2">
@@ -172,8 +177,15 @@ export default function ChatPage() {
 
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-2">
-                    <span className="truncate text-sm font-semibold text-foreground">
-                      {room.name}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-sm font-semibold text-foreground">
+                        {room.name}
+                      </span>
+                      {room.ai_mode && (
+                        <span className="shrink-0 rounded-full bg-brand/15 px-1.5 py-0.5 font-mono text-[10px] font-bold text-brand ring-1 ring-brand/25">
+                          AI
+                        </span>
+                      )}
                     </span>
                     {room.last_message && (
                       <span className="shrink-0 font-mono text-[11px] text-foreground/30">

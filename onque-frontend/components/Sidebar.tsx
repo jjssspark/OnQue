@@ -44,7 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     href: '/chat',
     label: '팀 채팅',
-    description: '주제별 방과 @비서',
+    description: '팀 대화와 AI 명령',
     icon: (
       <path d="M4 5h16v11H8l-4 4V5Z" />
     ),

@@ -85,6 +85,8 @@ export type ChatRoomRecord = {
   id: number;
   group_id: number;
   name: string;
+  /** /help로 AI를 부른 상태. 방 전체에 공유된다. */
+  ai_mode: boolean;
   created_at: string;
   /** 목록의 미리보기용. 아직 대화가 없으면 null. */
   last_message: ChatMessageRecord | null;
@@ -101,6 +103,7 @@ export type AnnouncementRecord = {
 export type ChatSendResult = {
   message: ChatMessageRecord;
   bot_message: ChatMessageRecord | null;
+  ai_mode: boolean;
   todos: Todo[];
   schedules: ScheduleItem[];
 };

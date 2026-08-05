@@ -511,6 +511,36 @@ def _serialize_message(message: ChatMessage) -> dict:
     }
 
 
+BOT_SENDER = "비서"
+
+# 명령어와 안내 문구. /help 응답이 이 목록에서 그대로 만들어지므로 한 곳만 고치면 된다.
+CHAT_COMMANDS = {
+    "/help": "AI 비서를 이 방으로 부릅니다",
+    "/exit": "AI 비서를 내보냅니다",
+    "/요약": "최근 대화를 요약합니다",
+    "/문서": "최근 대화로 회의록 초안을 만듭니다 (예: /문서 8월 첫째주 회의록)",
+    "/할일": "할 일을 등록합니다 (예: /할일 견적서 8월 12일까지)",
+    "/질문": "AI에게 한 번만 묻습니다 (예: /질문 A안과 B안 차이가 뭐야)",
+}
+
+HELP_TEXT = "AI 비서가 들어왔습니다. 이제 이 방의 대화를 함께 봅니다.\n\n" + "\n".join(
+    f"{cmd}  —  {desc}" for cmd, desc in CHAT_COMMANDS.items()
+)
+
+EXIT_TEXT = "AI 비서가 나갔습니다. 이제 사람들끼리의 대화로 돌아갑니다. 다시 부르려면 /help 를 입력하세요."
+
+
+def _serialize_room(room: ChatRoom, last: ChatMessage | None) -> dict:
+    return {
+        "id": room.id,
+        "group_id": room.group_id,
+        "name": room.name,
+        "ai_mode": room.ai_mode,
+        "created_at": room.created_at.isoformat(),
+        "last_message": _serialize_message(last) if last else None,
+    }
+
+
 def _require_room_access(user: User, room_id: int, db: Session) -> ChatRoom:
     """방을 찾고 그룹 멤버십까지 확인한 뒤 방을 돌려준다."""
     room = db.get(ChatRoom, room_id)
@@ -544,15 +574,7 @@ def list_chat_rooms(
             .order_by(ChatMessage.created_at.desc())
             .limit(1)
         ).first()
-        result.append(
-            {
-                "id": room.id,
-                "group_id": room.group_id,
-                "name": room.name,
-                "created_at": room.created_at.isoformat(),
-                "last_message": _serialize_message(last) if last else None,
-            }
-        )
+        result.append(_serialize_room(room, last))
     return result
 
 
@@ -575,13 +597,7 @@ def create_chat_room(
     db.add(room)
     db.commit()
     db.refresh(room)
-    return {
-        "id": room.id,
-        "group_id": room.group_id,
-        "name": room.name,
-        "created_at": room.created_at.isoformat(),
-        "last_message": None,
-    }
+    return _serialize_room(room, None)
 
 
 @app.delete("/chat/rooms/{room_id}")
@@ -670,6 +686,97 @@ def _apply_extracted_actions(db: Session, group_id: int, actions: dict) -> None:
                     break
 
 
+def _post_bot_message(db: Session, room_id: int, text: str) -> ChatMessage:
+    message = ChatMessage(room_id=room_id, sender=BOT_SENDER, content=text, is_bot=True)
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    return message
+
+
+def _recent_history(db: Session, room_id: int, limit: int = 20) -> list[dict]:
+    recent = db.scalars(
+        select(ChatMessage)
+        .where(ChatMessage.room_id == room_id)
+        .order_by(ChatMessage.created_at.desc())
+        .limit(limit)
+    ).all()
+    return [{"sender": m.sender, "content": m.content} for m in reversed(recent)]
+
+
+def _handle_command(
+    db: Session, room: ChatRoom, command: str, argument: str
+) -> ChatMessage | None:
+    """명령어를 처리하고 봇 응답 메시지를 돌려준다."""
+
+    if command == "/help":
+        room.ai_mode = True
+        db.commit()
+        return _post_bot_message(db, room.id, HELP_TEXT)
+
+    if command == "/exit":
+        room.ai_mode = False
+        db.commit()
+        return _post_bot_message(db, room.id, EXIT_TEXT)
+
+    if command == "/요약":
+        summary = gemini_service.summarize_conversation(_recent_history(db, room.id))
+        return _post_bot_message(db, room.id, summary)
+
+    if command == "/문서":
+        title = argument or "채팅 회의록"
+        structured = gemini_service.draft_document_from_conversation(
+            _recent_history(db, room.id), title
+        )
+        if not structured:
+            return _post_bot_message(
+                db, room.id, "문서로 만들 대화가 부족합니다. 대화가 쌓인 뒤 다시 시도해주세요."
+            )
+
+        summary_text = gemini_service.render_summary_text(structured)
+        doc = Document(
+            group_id=room.group_id,
+            source_type="document",
+            category=gemini_service.classify_document_category(summary_text),
+            filename=title,
+            summary=summary_text,
+            summary_json=json.dumps(structured, ensure_ascii=False),
+        )
+        db.add(doc)
+        db.commit()
+        return _post_bot_message(
+            db,
+            room.id,
+            f"'{title}' 문서를 만들어 이력에 저장했습니다.\n\n{structured['headline']}",
+        )
+
+    if command == "/할일":
+        if not argument:
+            return _post_bot_message(
+                db, room.id, "등록할 내용을 함께 적어주세요. 예: /할일 견적서 8월 12일까지"
+            )
+        # 날짜 표현을 그대로 살리려고 추출기를 재사용한다. "8월 12일까지" -> 2026-08-12
+        actions = gemini_service.extract_chat_actions(argument)
+        created = _create_todos_from_actions(db, room.group_id, actions.get("add_todos", []))
+        if not created:
+            created = [Todo(group_id=room.group_id, content=argument)]
+            db.add(created[0])
+        db.commit()
+        names = "\n".join(f"- {t.content}" for t in created)
+        return _post_bot_message(db, room.id, f"할 일에 등록했습니다.\n{names}")
+
+    if command == "/질문":
+        if not argument:
+            return _post_bot_message(db, room.id, "질문 내용을 함께 적어주세요. 예: /질문 A안과 B안 차이가 뭐야")
+        reply = gemini_service.generate_bot_reply(_recent_history(db, room.id), argument)
+        return _post_bot_message(db, room.id, reply)
+
+    known = " ".join(CHAT_COMMANDS)
+    return _post_bot_message(
+        db, room.id, f"'{command}'는 모르는 명령입니다.\n사용 가능: {known}"
+    )
+
+
 @app.post("/chat/messages")
 def create_chat_message(
     room_id: int,
@@ -688,26 +795,17 @@ def create_chat_message(
     db.commit()
     db.refresh(user_message)
 
-    actions = gemini_service.extract_chat_actions(content)
-    _apply_extracted_actions(db, group_id, actions)
-    db.commit()
-
     bot_message = None
-    if "@비서" in content:
-        recent = db.scalars(
-            select(ChatMessage)
-            .where(ChatMessage.room_id == room_id)
-            .order_by(ChatMessage.created_at.desc())
-            .limit(10)
-        ).all()
-        history = [
-            {"sender": m.sender, "content": m.content} for m in reversed(recent)
-        ]
-        reply_text = gemini_service.generate_bot_reply(history, content)
-        bot_message = ChatMessage(room_id=room_id, sender="비서", content=reply_text, is_bot=True)
-        db.add(bot_message)
+    if content.startswith("/"):
+        command, _, argument = content.partition(" ")
+        bot_message = _handle_command(db, room, command.strip(), argument.strip())
+    elif room.ai_mode:
+        # AI가 방에 들어와 있을 때만 대화를 읽는다. 평소엔 Gemini를 호출하지 않는다.
+        actions = gemini_service.extract_chat_actions(content)
+        _apply_extracted_actions(db, group_id, actions)
         db.commit()
-        db.refresh(bot_message)
+        reply_text = gemini_service.generate_bot_reply(_recent_history(db, room_id), content)
+        bot_message = _post_bot_message(db, room_id, reply_text)
 
     todos = db.scalars(
         select(Todo)
@@ -723,6 +821,7 @@ def create_chat_message(
     return {
         "message": _serialize_message(user_message),
         "bot_message": _serialize_message(bot_message) if bot_message else None,
+        "ai_mode": room.ai_mode,
         "todos": [_serialize_todo(t) for t in todos],
         "schedules": [_serialize_schedule(s) for s in schedules],
     }

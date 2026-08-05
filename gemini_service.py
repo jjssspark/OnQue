@@ -340,6 +340,65 @@ def extract_chat_actions(message: str) -> dict:
         return dict(_EMPTY_EXTRACTION)
 
 
+def _format_history(messages: list[dict]) -> str:
+    return "\n".join(f"{m['sender']}: {m['content']}" for m in messages)
+
+
+def summarize_conversation(messages: list[dict]) -> str:
+    """채팅 대화를 짧은 평문으로 요약한다. /요약 명령용."""
+
+    if not messages:
+        return "요약할 대화가 아직 없습니다."
+
+    prompt = (
+        f"{korean_date_context()}\n\n"
+        "아래는 회사 팀 채팅의 최근 대화다. 팀원이 빠르게 따라잡을 수 있도록 정리해라.\n"
+        "- 한 줄 요약 다음에 핵심 논의를 '- ' 불릿 3~5개로 적는다.\n"
+        "- 결정된 사항과 미정 사항을 구분한다.\n"
+        "- 이모지, 서론, 인사말은 쓰지 않는다.\n"
+        "- 한국어로 작성한다.\n\n"
+        f"[대화]\n{_format_history(messages)}"
+    )
+
+    try:
+        response = client.models.generate_content(model=MODEL, contents=prompt)
+        return (getattr(response, "text", "") or "").strip() or "대화를 요약하지 못했습니다."
+    except Exception:
+        return "지금은 요약을 만들지 못했어요. 잠시 후 다시 시도해주세요."
+
+
+def draft_document_from_conversation(messages: list[dict], title: str) -> dict | None:
+    """채팅 대화로 회의록 초안을 만든다. 업로드 요약과 같은 구조를 돌려준다.
+
+    같은 스키마를 쓰므로 이력 화면에서 업로드 요약과 동일하게 렌더된다.
+    """
+
+    if not messages:
+        return None
+
+    prompt = (
+        f"{korean_date_context()}\n\n{DOCUMENT_SUMMARY_PROMPT}\n\n"
+        f"아래 팀 채팅 대화를 '{title}' 회의록으로 정리해라.\n\n"
+        f"[대화]\n{_format_history(messages)}"
+    )
+
+    try:
+        response = client.models.generate_content(
+            model=MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=_SUMMARY_SCHEMA,
+            ),
+        )
+        structured = normalize_summary(json.loads(response.text))
+        if structured["headline"] or structured["key_points"]:
+            return structured
+    except Exception:
+        pass
+    return None
+
+
 _BOT_PERSONA_PROMPT = """
 너는 스타트업의 업무 흐름을 꿰뚫는 꼼꼼한 PM 비서 '@비서'다.
 동료들의 업무를 돕고, 대화 맥락을 이해해 적절한 피드백을 준다.
