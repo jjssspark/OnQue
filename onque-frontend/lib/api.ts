@@ -61,6 +61,14 @@ export type ChatMessageRecord = {
   created_at: string;
 };
 
+export type AnnouncementRecord = {
+  id: number;
+  title: string;
+  content: string;
+  author_id: number;
+  created_at: string;
+};
+
 export type ChatSendResult = {
   message: ChatMessageRecord;
   bot_message: ChatMessageRecord | null;
@@ -176,4 +184,43 @@ export function login(email: string, password: string): Promise<{ user: AuthUser
 
 export function getMe(): Promise<MeResponse> {
   return requestEnveloped('/api/v1/me');
+}
+
+export function listUsers(): Promise<AuthUser[]> {
+  return requestEnveloped('/api/v1/users');
+}
+
+export function createGroup(name: string): Promise<GroupSummary> {
+  return requestEnveloped('/api/v1/groups', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function listGroupMembers(groupId: number): Promise<AuthUser[]> {
+  return requestEnveloped(`/api/v1/groups/${groupId}/members`);
+}
+
+export function addGroupMember(groupId: number, userId: number): Promise<unknown> {
+  return requestEnveloped(`/api/v1/groups/${groupId}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId }),
+  });
+}
+
+export function removeGroupMember(groupId: number, userId: number): Promise<unknown> {
+  return requestEnveloped(`/api/v1/groups/${groupId}/members/${userId}`, {
+    method: 'DELETE',
+  });
+}
+
+export function listAnnouncements(): Promise<AnnouncementRecord[]> {
+  return requestEnveloped('/api/v1/announcements');
+}
+
+export function createAnnouncement(title: string, content: string): Promise<AnnouncementRecord> {
+  return requestEnveloped('/api/v1/announcements', {
+    method: 'POST',
+    body: JSON.stringify({ title, content }),
+  });
 }

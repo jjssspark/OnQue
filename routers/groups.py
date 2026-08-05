@@ -62,6 +62,44 @@ def list_my_groups(
     }
 
 
+@router.get("/groups/{group_id}/members")
+def list_group_members(
+    group_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    group = db.get(Group, group_id)
+    if not group:
+        raise HTTPException(
+            status_code=404, detail={"code": "GROUP_NOT_FOUND", "message": "그룹을 찾을 수 없습니다."}
+        )
+    # 관리자가 아니면 자신이 속한 그룹의 명단만 볼 수 있다.
+    if current_user.role != "admin":
+        is_member = db.get(
+            GroupMembership, {"user_id": current_user.id, "group_id": group_id}
+        )
+        if not is_member:
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "GROUP_ACCESS_FORBIDDEN", "message": "이 그룹에 접근할 수 없습니다."},
+            )
+
+    memberships = db.scalars(
+        select(GroupMembership).where(GroupMembership.group_id == group_id)
+    ).all()
+    user_ids = [m.user_id for m in memberships]
+    users = (
+        db.scalars(select(User).where(User.id.in_(user_ids))).all() if user_ids else []
+    )
+    return {
+        "success": True,
+        "data": [
+            {"id": u.id, "email": u.email, "name": u.name, "role": u.role} for u in users
+        ],
+        "error": None,
+    }
+
+
 @router.post("/groups/{group_id}/members")
 def add_group_member(
     group_id: int,

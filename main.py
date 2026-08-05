@@ -11,6 +11,7 @@ import gemini_service
 from db import Base, engine, get_db
 from routers.auth import router as auth_router
 from routers.groups import router as groups_router
+from routers.users import router as users_router
 from routers.announcements import router as announcements_router
 from auth import get_current_user
 from models import ChatMessage, Document, GroupMembership, Schedule, Todo, User
@@ -45,6 +46,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(groups_router)
 app.include_router(announcements_router)
+app.include_router(users_router)
 
 
 @app.get("/")

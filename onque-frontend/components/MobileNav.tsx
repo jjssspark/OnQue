@@ -9,6 +9,8 @@ const NAV_ITEMS = [
   { href: '/documents', label: '문서·회의록' },
   { href: '/chat', label: '팀 채팅' },
   { href: '/history', label: '이력 조회' },
+  { href: '/announcements', label: '전사 공지' },
+  { href: '/groups', label: '그룹 관리' },
 ];
 
 export function MobileNav() {

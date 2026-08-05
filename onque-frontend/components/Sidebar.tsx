@@ -60,6 +60,28 @@ const NAV_ITEMS: NavItem[] = [
       </>
     ),
   },
+  {
+    href: '/announcements',
+    label: '전사 공지',
+    description: '회사 전체 공지사항',
+    icon: (
+      <>
+        <path d="M4 9v6h4l6 4V5L8 9H4Z" />
+        <path d="M18 8.5a5 5 0 0 1 0 7" />
+      </>
+    ),
+  },
+  {
+    href: '/groups',
+    label: '그룹 관리',
+    description: '부서·팀과 멤버',
+    icon: (
+      <>
+        <circle cx="9" cy="8" r="3" />
+        <path d="M3 20a6 6 0 0 1 12 0M16.5 5.5a3 3 0 0 1 0 5.8M18 20a5.5 5.5 0 0 0-3-4.9" />
+      </>
+    ),
+  },
 ];
 
 export function Sidebar() {
