@@ -20,4 +20,4 @@ def test_decode_access_token_rejects_garbage():
     with pytest.raises(HTTPException) as exc_info:
         decode_access_token("not-a-real-token")
     assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "AUTH_TOKEN_INVALID"
+    assert exc_info.value.detail["code"] == "AUTH_TOKEN_INVALID"

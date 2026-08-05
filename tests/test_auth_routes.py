@@ -58,6 +58,7 @@ def test_login_wrong_password_returns_401(client):
 def test_me_requires_auth_header(client):
     res = client.get("/api/v1/me")
     assert res.status_code == 401
+    assert res.json()["error"]["code"] == "AUTH_TOKEN_INVALID"
 
 
 def test_me_returns_current_user_and_groups(client):

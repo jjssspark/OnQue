@@ -37,9 +37,15 @@ def decode_access_token(token: str) -> int:
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="AUTH_TOKEN_EXPIRED")
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "AUTH_TOKEN_EXPIRED", "message": "인증 토큰이 만료되었습니다."},
+        )
     except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="AUTH_TOKEN_INVALID")
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "AUTH_TOKEN_INVALID", "message": "인증 토큰이 유효하지 않습니다."},
+        )
     return int(payload["sub"])
 
 
@@ -49,10 +55,16 @@ def get_current_user(
     from models import User
 
     if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="AUTH_TOKEN_INVALID")
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "AUTH_TOKEN_INVALID", "message": "인증 토큰이 유효하지 않습니다."},
+        )
     token = authorization.removeprefix("Bearer ")
     user_id = decode_access_token(token)
     user = db.get(User, user_id)
     if not user:
-        raise HTTPException(status_code=401, detail="AUTH_TOKEN_INVALID")
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "AUTH_TOKEN_INVALID", "message": "인증 토큰이 유효하지 않습니다."},
+        )
     return user
