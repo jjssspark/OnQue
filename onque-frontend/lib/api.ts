@@ -417,7 +417,7 @@ export function getCommitmentsPage(
 }
 
 export function getClients(groupId: number): Promise<Client[]> {
-  return requestEnveloped<Client[]>(`/api/v1/clients?group_id=${groupId}`);
+  return requestEnveloped<Client[]>(`/api/v1/clients?group_id=${groupId}&limit=100`);
 }
 
 export function createClient(groupId: number, name: string): Promise<Client> {
