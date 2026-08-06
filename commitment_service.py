@@ -13,19 +13,22 @@ from models import Client, Commitment, COMMITMENT_STATUSES
 
 logger = logging.getLogger(__name__)
 
-TERMINAL_STATUSES = frozenset({"fulfilled", "dismissed"})
-
 # 기한 경고 기준. D-2 이내면 임박으로 본다.
 DUE_SOON_DAYS = 2
 
+# 다이어그램에 그려진 화살표만 허용한다: proposed -> confirmed/dismissed,
+# confirmed -> fulfilled/dismissed. fulfilled·dismissed는 키가 없으므로
+# 종료 상태에서는 어떤 target이 와도 자연히 거부된다 — 되돌리기(undo)는 없다.
+_ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
+    "proposed": frozenset({"confirmed", "dismissed"}),
+    "confirmed": frozenset({"fulfilled", "dismissed"}),
+}
+
 
 def can_transition(current: str, target: str) -> bool:
-    """종료 상태에서는 빠져나오지 못한다. 잘못 눌렀다면 새 약속을 만든다."""
     if target not in COMMITMENT_STATUSES:
         return False
-    if current in TERMINAL_STATUSES:
-        return False
-    return current != target
+    return target in _ALLOWED_TRANSITIONS.get(current, frozenset())
 
 
 def apply_status(commitment: Commitment, target: str) -> None:

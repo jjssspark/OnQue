@@ -126,6 +126,67 @@ def test_patch_rejects_transition_from_terminal_status(client, db_session):
     assert res.json()["error"]["code"] == "COMMITMENT_STATUS_INVALID"
 
 
+def test_patch_rejects_skipping_confirmation(client, db_session):
+    """proposed에서 confirmed를 건너뛰고 fulfilled로 가면 승인 게이트가 무력화된다."""
+    headers, group_a, _ = _setup(client)
+    c = _seed(db_session, group_a)
+
+    res = client.patch(
+        f"/api/v1/commitments/{c.id}", json={"status": "fulfilled"}, headers=headers
+    )
+    assert res.status_code == 400
+    assert res.json()["error"]["code"] == "COMMITMENT_STATUS_INVALID"
+
+    db_session.expire_all()
+    assert db_session.get(Commitment, c.id).status == "proposed"
+
+
+def test_patch_rejects_undoing_confirmation(client, db_session):
+    """confirmed를 proposed로 되돌리는 것도 허용하지 않는다 — 되돌리기는 없다."""
+    headers, group_a, _ = _setup(client)
+    c = _seed(db_session, group_a, status="confirmed")
+
+    res = client.patch(
+        f"/api/v1/commitments/{c.id}", json={"status": "proposed"}, headers=headers
+    )
+    assert res.status_code == 400
+    assert res.json()["error"]["code"] == "COMMITMENT_STATUS_INVALID"
+
+    db_session.expire_all()
+    assert db_session.get(Commitment, c.id).status == "confirmed"
+
+
+def test_patch_allows_remaining_valid_transitions(client, db_session):
+    """proposed->confirmed는 test_patch_confirms_commitment가 이미 덮는다.
+    나머지 허용 전이(proposed->dismissed, confirmed->fulfilled, confirmed->dismissed)를
+    확인한다."""
+    headers, group_a, _ = _setup(client)
+    to_dismiss = _seed(db_session, group_a, content="첫째")
+    to_fulfill = _seed(db_session, group_a, content="둘째", status="confirmed")
+    confirmed_to_dismiss = _seed(db_session, group_a, content="셋째", status="confirmed")
+
+    res1 = client.patch(
+        f"/api/v1/commitments/{to_dismiss.id}", json={"status": "dismissed"}, headers=headers
+    )
+    res2 = client.patch(
+        f"/api/v1/commitments/{to_fulfill.id}", json={"status": "fulfilled"}, headers=headers
+    )
+    res3 = client.patch(
+        f"/api/v1/commitments/{confirmed_to_dismiss.id}",
+        json={"status": "dismissed"},
+        headers=headers,
+    )
+
+    assert res1.status_code == 200
+    assert res2.status_code == 200
+    assert res3.status_code == 200
+
+    db_session.expire_all()
+    assert db_session.get(Commitment, to_dismiss.id).status == "dismissed"
+    assert db_session.get(Commitment, to_fulfill.id).status == "fulfilled"
+    assert db_session.get(Commitment, confirmed_to_dismiss.id).status == "dismissed"
+
+
 def test_patch_rejects_unknown_status(client, db_session):
     headers, group_a, _ = _setup(client)
     c = _seed(db_session, group_a)
@@ -150,6 +211,27 @@ def test_patch_rejects_cross_group(client, db_session):
         headers={"Authorization": f"Bearer {other}"},
     )
     assert res.status_code == 403
+
+
+def test_bulk_status_rejects_all_if_transition_invalid(client, db_session):
+    """일괄 요청에 확정을 건너뛰는 전이가 하나라도 섞이면 전체를 거부하고
+    아무것도 바꾸지 않는다. can_transition을 공유하므로 단일 PATCH와 같은
+    규칙이 적용돼야 한다."""
+    headers, group_a, _ = _setup(client)
+    valid = _seed(db_session, group_a, content="유효", status="confirmed")
+    invalid = _seed(db_session, group_a, content="무효")  # proposed, fulfilled로 못 감
+
+    res = client.post(
+        "/api/v1/commitments/bulk-status",
+        json={"ids": [valid.id, invalid.id], "status": "fulfilled"},
+        headers=headers,
+    )
+    assert res.status_code == 400
+    assert res.json()["error"]["code"] == "COMMITMENT_STATUS_INVALID"
+
+    db_session.expire_all()
+    assert db_session.get(Commitment, valid.id).status == "confirmed"
+    assert db_session.get(Commitment, invalid.id).status == "proposed"
 
 
 def test_bulk_status_confirms_many(client, db_session):
