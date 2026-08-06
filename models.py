@@ -18,6 +18,8 @@ from db import Base
 DOCUMENT_CATEGORIES = ("기획", "디자인", "개발", "마케팅", "기타", "통화")
 DOCUMENT_SOURCE_TYPES = ("call", "document")
 USER_ROLES = ("admin", "member")
+COMMITMENT_STATUSES = ("proposed", "confirmed", "fulfilled", "dismissed")
+COMMITMENT_SOURCE_TYPES = ("call", "document", "chat")
 # 그룹을 만들면 빈 채팅 목록 대신 바로 쓸 수 있는 방 하나를 함께 만든다.
 DEFAULT_CHAT_ROOM_NAME = "일반"
 
@@ -44,6 +46,10 @@ class Group(Base):
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # 요청 편승 스윕의 쿨다운 기준. null이면 한 번도 안 돌았음 — 백필 불필요.
+    last_swept_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
 
@@ -171,6 +177,8 @@ class ChatRoom(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # 방 단위 배치 스캔의 진행 지점. null이면 아직 훑은 적 없음 — 백필 불필요.
+    last_scanned_message_id: Mapped[int | None] = mapped_column(nullable=True)
 
 
 class ChatRoomMember(Base):
@@ -197,4 +205,59 @@ class ChatMessage(Base):
     is_bot: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Client(Base):
+    __tablename__ = "clients"
+    __table_args__ = (
+        UniqueConstraint("group_id", "name", name="uq_clients_group_name"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Commitment(Base):
+    """클라이언트에게 한 약속. 내부 작업인 Todo와 구분된다 —
+    상대(client_id)와 근거(evidence)를 갖고, 놓치면 신뢰와 돈이 걸린다."""
+
+    __tablename__ = "commitments"
+    __table_args__ = (
+        CheckConstraint(
+            f"status IN {COMMITMENT_STATUSES}", name="ck_commitments_status"
+        ),
+        CheckConstraint(
+            f"source_type IN {COMMITMENT_SOURCE_TYPES}",
+            name="ck_commitments_source_type",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id"), nullable=False)
+    client_id: Mapped[int | None] = mapped_column(
+        ForeignKey("clients.id"), nullable=True
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="proposed")
+    source_type: Mapped[str] = mapped_column(Text, nullable=False)
+    # documents.id 또는 chat_messages.id. 원본이 지워져도 약속은 남아야 하므로 FK를 걸지 않는다.
+    source_id: Mapped[int | None] = mapped_column(nullable=True)
+    evidence: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
