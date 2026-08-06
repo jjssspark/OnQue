@@ -4,14 +4,45 @@
 """
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from models import Client, Commitment
+from models import Client, Commitment, COMMITMENT_STATUSES
 
 logger = logging.getLogger(__name__)
+
+TERMINAL_STATUSES = frozenset({"fulfilled", "dismissed"})
+
+# 기한 경고 기준. D-2 이내면 임박으로 본다.
+DUE_SOON_DAYS = 2
+
+
+def can_transition(current: str, target: str) -> bool:
+    """종료 상태에서는 빠져나오지 못한다. 잘못 눌렀다면 새 약속을 만든다."""
+    if target not in COMMITMENT_STATUSES:
+        return False
+    if current in TERMINAL_STATUSES:
+        return False
+    return current != target
+
+
+def apply_status(commitment: Commitment, target: str) -> None:
+    commitment.status = target
+    if target == "confirmed" and commitment.confirmed_at is None:
+        commitment.confirmed_at = datetime.now(timezone.utc)
+
+
+def due_flags(commitment: Commitment, today: date) -> tuple[bool, bool]:
+    """(is_overdue, is_due_soon). 저장하지 않고 조회 시 계산하는 파생값이다.
+
+    proposed 상태는 아직 사람이 확인하지 않았으므로 추적 대상이 아니다.
+    """
+    if commitment.status != "confirmed" or commitment.due_date is None:
+        return (False, False)
+    delta = (commitment.due_date - today).days
+    return (delta < 0, 0 <= delta <= DUE_SOON_DAYS)
 
 
 def _parse_date(value: str) -> date | None:
