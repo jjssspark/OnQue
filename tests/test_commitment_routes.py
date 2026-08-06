@@ -64,6 +64,31 @@ def test_list_isolated_between_groups(client, db_session):
     assert res.json()["data"] == []
 
 
+def test_list_meta_reports_total_limit_and_has_next(client, db_session):
+    headers, group_a, _ = _setup(client)
+    for i in range(3):
+        _seed(db_session, group_a, content=f"약속 {i}")
+
+    res = client.get(
+        "/api/v1/commitments",
+        params={"group_id": group_a, "limit": 2},
+        headers=headers,
+    )
+    meta = res.json()["meta"]
+    assert meta == {"total": 3, "limit": 2, "hasNext": True}
+    assert len(res.json()["data"]) == 2
+
+
+def test_list_meta_has_next_false_when_everything_fits(client, db_session):
+    headers, group_a, _ = _setup(client)
+    _seed(db_session, group_a, content="유일한 약속")
+
+    res = client.get(
+        "/api/v1/commitments", params={"group_id": group_a}, headers=headers
+    )
+    assert res.json()["meta"] == {"total": 1, "limit": 20, "hasNext": False}
+
+
 def test_list_rejects_limit_over_100(client, db_session):
     headers, group_a, _ = _setup(client)
     res = client.get(
@@ -250,6 +275,35 @@ def test_bulk_status_confirms_many(client, db_session):
     db_session.expire_all()
     assert db_session.get(Commitment, a.id).status == "confirmed"
     assert db_session.get(Commitment, b.id).status == "confirmed"
+
+
+def test_bulk_status_rejects_over_100_ids(client, db_session):
+    headers, group_a, _ = _setup(client)
+    res = client.post(
+        "/api/v1/commitments/bulk-status",
+        json={"ids": list(range(1, 102)), "status": "confirmed"},
+        headers=headers,
+    )
+    assert res.status_code == 422
+
+
+def test_bulk_status_dedupes_repeated_ids(client, db_session):
+    """ids=[1, 1]을 보내면 updated가 1이어야 한다. 중복을 그대로 두면
+    존재 확인(len(rows) != len(ids))에서 어긋나거나 카운트가 호출자의
+    기대와 달라진다."""
+    headers, group_a, _ = _setup(client)
+    a = _seed(db_session, group_a, content="하나")
+
+    res = client.post(
+        "/api/v1/commitments/bulk-status",
+        json={"ids": [a.id, a.id], "status": "confirmed"},
+        headers=headers,
+    )
+    assert res.status_code == 200
+    assert res.json()["data"]["updated"] == 1
+
+    db_session.expire_all()
+    assert db_session.get(Commitment, a.id).status == "confirmed"
 
 
 def test_bulk_status_rejects_all_if_one_is_foreign(client, db_session):
