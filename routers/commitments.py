@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from auth import get_current_user
 from db import get_db
@@ -49,12 +50,14 @@ class ClientCreateBody(BaseModel):
 @router.get("/clients")
 def list_clients(
     group_id: int,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     _require_group_member(current_user, group_id, db)
     rows = db.execute(
-        select(Client).where(Client.group_id == group_id).order_by(Client.name)
+        select(Client).where(Client.group_id == group_id).order_by(Client.name).offset(offset).limit(limit)
     ).scalars().all()
     return _ok([_serialize_client(c) for c in rows])
 
@@ -84,6 +87,13 @@ def create_client(
 
     created = Client(group_id=body.group_id, name=name)
     db.add(created)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "CLIENT_NAME_DUPLICATE", "message": "이미 등록된 클라이언트입니다"},
+        )
     db.refresh(created)
     return _ok(_serialize_client(created))

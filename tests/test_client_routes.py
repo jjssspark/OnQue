@@ -55,3 +55,57 @@ def test_client_requires_group_membership(client):
         headers={"Authorization": f"Bearer {other}"},
     )
     assert res.status_code == 403
+
+
+def test_list_clients_pagination_limit(client):
+    headers, group_a, _ = _setup(client)
+    # Create 25 clients
+    for i in range(25):
+        client.post(
+            "/api/v1/clients",
+            json={"group_id": group_a, "name": f"Client{i:02d}"},
+            headers=headers,
+        )
+
+    # Default limit is 20
+    res = client.get("/api/v1/clients", params={"group_id": group_a}, headers=headers)
+    assert len(res.json()["data"]) == 20
+
+    # Explicit limit
+    res = client.get("/api/v1/clients", params={"group_id": group_a, "limit": 10}, headers=headers)
+    assert len(res.json()["data"]) == 10
+
+
+def test_list_clients_pagination_offset(client):
+    headers, group_a, _ = _setup(client)
+    # Create 5 clients with predictable names
+    for i in range(5):
+        client.post(
+            "/api/v1/clients",
+            json={"group_id": group_a, "name": f"Client{i:02d}"},
+            headers=headers,
+        )
+
+    # Get first 2
+    res1 = client.get("/api/v1/clients", params={"group_id": group_a, "limit": 2}, headers=headers)
+    assert len(res1.json()["data"]) == 2
+    first_names = [c["name"] for c in res1.json()["data"]]
+
+    # Get next 2 with offset
+    res2 = client.get("/api/v1/clients", params={"group_id": group_a, "limit": 2, "offset": 2}, headers=headers)
+    assert len(res2.json()["data"]) == 2
+    second_names = [c["name"] for c in res2.json()["data"]]
+
+    # Verify no overlap
+    assert set(first_names) & set(second_names) == set()
+
+
+def test_list_clients_pagination_max_limit_exceeded(client):
+    headers, group_a, _ = _setup(client)
+    # Attempt limit > 100
+    res = client.get(
+        "/api/v1/clients",
+        params={"group_id": group_a, "limit": 101},
+        headers=headers,
+    )
+    assert res.status_code == 422
