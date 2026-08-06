@@ -86,14 +86,40 @@ def require_group_admin(db, user, group_id) -> GroupMembership
 | 파일 | 지점 |
 |---|---|
 | `routers/groups.py` | 7곳 — 생성/조회/멤버추가/멤버제거/초대/초대목록/초대취소 |
-| `main.py` | 5곳 — 문서 삭제, 일정 생성·수정·삭제, 채팅방 삭제, 방 멤버 강퇴 |
+| `main.py` | 6곳 — 문서 삭제, 일정 생성·수정·삭제, 채팅방 삭제, 방 멤버 강퇴 |
 | `routers/announcements.py` | 1곳 — 공지 작성 |
 | `routers/users.py` | 1곳 — 삭제 예정 (§6) |
 
-**nullable group_id 구멍**: `Document.group_id`(`models.py:154`)와
-`Schedule.group_id`(`models.py:128`)는 nullable이다. group_id가 NULL인 자료는
-관리자 대리 삭제 대상에서 제외하고 **작성자만** 삭제할 수 있다.
-어느 그룹의 관리자가 권한을 갖는지 정의되지 않기 때문이다.
+`main.py:90`에 이미 `_require_group_member(user, group_id, db)`가 있다.
+`permissions.py`로 옮기고 `require_group_admin`을 옆에 둔다.
+
+### 2-1. "전사" 자료 개념 제거
+
+`main.py`의 문서·일정 권한 검사는 이런 모양이다.
+
+```python
+if doc.group_id is not None:
+    _require_group_member(current_user, doc.group_id, db)   # 그룹 멤버면 누구나
+elif current_user.role != "admin":                          # group_id가 NULL인 '전사' 자료
+    raise HTTPException(403, ...)
+```
+
+즉 그룹 문서는 **지금도 그 그룹 멤버 누구나 지울 수 있고**, 전역 admin은
+`group_id`가 NULL인 자료에만 관여한다. 확인한 사실 둘:
+
+- `Document`와 `Schedule`에는 **작성자 컬럼이 없다** (`created_by` 없음).
+  "본인 것만 삭제"는 구현할 수 없다.
+- 운영 DB에 `group_id`가 NULL인 문서 0건, 일정은 전체 0건. **전사 경로는 죽어 있다.**
+
+전역 admin이 사라지면 전사 자료를 만들 사람도 지울 사람도 없다. 그래서 개념째 없앤다.
+
+- `POST /schedules`는 `group_id`를 **필수**로 받는다. 없으면 422.
+- `elif current_user.role != "admin"` 가지를 전부 삭제한다.
+- `Document.group_id`·`Schedule.group_id`의 nullable 자체는 그대로 둔다.
+  0행이라 NOT NULL 전환의 이득이 없고, 스키마 변경 면적만 늘린다.
+  대신 **쓰기 경로에서 NULL이 새로 생기지 않게 막는다.**
+- 기존 코드가 NULL 문서를 읽는 경로는 남겨 둔다 (0건이지만 방어).
+  삭제 시 `group_id`가 NULL이면 403 `DOCUMENT_DELETE_FORBIDDEN`.
 
 ### 3. 그룹 생성 개방
 
@@ -123,9 +149,13 @@ class Announcement(Base):
 
 | 엔드포인트 | 동작 |
 |---|---|
-| `GET /api/v1/me` | 이름·이메일·가입일 + 소속 팀 목록과 각 팀에서의 역할 |
-| `PATCH /api/v1/me` | 이름 변경 |
-| `POST /api/v1/me/password` | 현재 비밀번호 확인 후 변경 |
+| `GET /api/v1/me` | **이미 존재** (`routers/auth.py:115`). 각 그룹의 role과 `created_at`을 추가하고, `user.role`을 응답에서 제거 |
+| `PATCH /api/v1/me` | 신규. 이름 변경 |
+| `POST /api/v1/me/password` | 신규. 현재 비밀번호 확인 후 변경 |
+
+`_serialize_user`(`routers/auth.py:37`)가 `user.role`을 내려보내고 있다. 이걸 빼는 것은
+`POST /auth/signup`·`POST /auth/login`·`GET /me` 세 응답을 동시에 바꾸는 **깨는 변경**이다.
+프론트가 `user.role`을 읽는 곳이 있는지 확인하고 함께 고친다.
 
 `GET /api/v1/me` 응답:
 
@@ -165,6 +195,19 @@ class Announcement(Base):
   단, **서버 검사가 정본이다.** 화면 숨김은 편의일 뿐 권한 경계가 아니다.
 - 이모지를 아이콘으로 쓰지 않는다.
 
+`user.role`을 읽는 곳 4군데를 전부 그룹 역할로 바꾼다.
+
+| 위치 | 현재 | 변경 |
+|---|---|---|
+| `app/announcements/page.tsx:13` | `user?.role === 'admin'` | 선택된 그룹의 내 role |
+| `app/groups/page.tsx:20` | `user?.role === 'admin'` | 선택된 그룹의 내 role |
+| `app/groups/page.tsx:218` | `m.role === 'admin'` | 멤버 목록 응답의 그룹 role |
+| `components/Sidebar.tsx:168` | `{user?.name} · {user?.role}` | 이름만 표시 |
+
+`GET /groups/{id}/members` 응답의 `role`(`routers/groups.py:139`)은 지금 `User.role`이다.
+멤버십 role로 바꾼다. 필드명이 같아 프론트 변경은 `:218` 한 줄뿐이지만,
+**값의 의미가 바뀌는 조용한 변경**이므로 테스트로 고정한다.
+
 ### 8. 마이그레이션
 
 `scripts/migrate_group_roles.py` — `_column_exists`(information_schema) 기반 멱등 실행.
@@ -194,16 +237,18 @@ class Announcement(Base):
 | 그룹 생성 (생성자가 관리자가 됨) | O | O |
 | 멤버 초대 / 내보내기 | O | X |
 | 팀 공지 작성 | O | X |
-| 남의 문서·일정 삭제 | O | X |
 | 남의 채팅방 삭제 / 방 멤버 강퇴 | O | X |
 | 문서·통화 업로드, 요약 조회 | O | O |
-| 본인이 올린 것 수정·삭제 | O | O |
+| 팀 문서·일정 수정·삭제 | O | O |
 | 약속 확정·기각 | O | O |
 | 채팅방 개설 | O | O |
 | 내 프로필 조회·수정 | O | O |
 
-"남의 문서·일정 삭제"는 그 자료에 `group_id`가 있을 때만 성립한다.
-`group_id`가 NULL인 자료는 작성자만 삭제한다 (§2 참조).
+"팀 문서·일정 수정·삭제"가 멤버에게도 열려 있는 것은 **현재 동작을 유지한 것**이다.
+`Document`·`Schedule`에 작성자 컬럼이 없어 "본인 것만"을 구현할 수 없고,
+관리자로 좁히면 자기가 잘못 올린 파일도 스스로 못 지운다.
+
+채팅방 삭제·강퇴는 `ChatRoom.created_by`가 있으므로 **개설자 또는 그룹 관리자**다.
 
 ---
 
