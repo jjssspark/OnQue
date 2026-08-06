@@ -120,11 +120,14 @@ _CHAT_COMMITMENT_PROMPT = """
 """
 
 
-def extract_chat_commitments(history_text: str) -> list[dict]:
-    """대화 이력에서 고객사 약속을 뽑는다. 실패 시 빈 리스트.
+def extract_chat_commitments(history_text: str) -> list[dict] | None:
+    """대화 이력에서 고객사 약속을 뽑는다.
 
-    스윕은 부가 작업이라 여기서 예외를 밖으로 던지지 않는다.
-    extract_chat_actions와 같은 방침.
+    실패하면 None, 약속이 없으면 빈 리스트 — 이 둘을 구분해야 한다.
+    빈 리스트로 뭉뚱그리면 호출자(commitment_service._scan_room)가 실패를
+    "약속 없음"으로 착각해 스캔 포인터를 전진시키고, 그 배치에 실제로 있던
+    약속은 다시는 검사되지 않는다. extract_chat_actions는 놓쳐도 사용자가
+    다시 명령하면 되므로 빈 값 반환을 유지하지만, 여기는 그렇지 않다.
     """
     prompt = (
         f"{korean_date_context()}\n\n{_CHAT_COMMITMENT_PROMPT}\n\n[대화]\n{history_text}"
@@ -141,7 +144,7 @@ def extract_chat_commitments(history_text: str) -> list[dict]:
         data = json.loads(response.text)
         return data.get("commitments") or []
     except Exception:
-        return []
+        return None
 
 
 _SUMMARY_SCHEMA = {
