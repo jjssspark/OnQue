@@ -1,7 +1,10 @@
-from datetime import date
+import json
+import logging
+from datetime import date, datetime, timezone
 
 import commitment_service
-from gemini_service import normalize_summary
+import gemini_service
+from gemini_service import extract_chat_commitments, normalize_summary
 from models import Client, Commitment
 
 
@@ -143,6 +146,58 @@ def test_create_commitments_with_empty_list(client, db_session):
         db_session, group_id=1, items=[], source_type="chat", source_id=None
     ) == []
     assert db_session.query(Commitment).count() == 0
+
+
+class _FakeResponse:
+    def __init__(self, text: str):
+        self.text = text
+
+
+def test_extract_chat_commitments_shares_normalize_summary_guard(monkeypatch):
+    """모델이 commitments를 리스트가 아닌 값("없음")으로 뱉어도 예외 없이
+    빈 리스트를 돌려줘야 한다. normalize_summary와 같은 가드를 공유하는지
+    검증한다 — 공유하지 않으면 채팅 경로는 create_commitments에서 문자열을
+    순회하다 그대로 죽고, 실패 시 스캔 포인터가 멈추므로 같은 배치를
+    영원히 재시도하게 된다."""
+    monkeypatch.setattr(
+        gemini_service.client.models,
+        "generate_content",
+        lambda **kwargs: _FakeResponse(json.dumps({"commitments": "약속 없음"})),
+    )
+    assert extract_chat_commitments("아무 대화") == []
+
+
+def test_extract_chat_commitments_logs_warning_on_failure(monkeypatch, caplog):
+    """실패 원인이 로그 없이 사라지면 안 된다 — observability.md 요구사항."""
+
+    def boom(**kwargs):
+        raise RuntimeError("429 Too Many Requests")
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", boom)
+
+    with caplog.at_level(logging.WARNING, logger="gemini_service"):
+        result = extract_chat_commitments("아무 대화")
+
+    assert result is None
+    records = [r for r in caplog.records if r.name == "gemini_service"]
+    assert len(records) == 1
+    assert records[0].event == "commitment.chat_extraction.failed"
+    assert records[0].exc_info is not None
+
+
+def test_today_kst_reports_seoul_date_not_utc_date(monkeypatch):
+    """UTC 23:30이면 KST는 이미 다음날 08:30이다. 서버가 UTC로 돌아도
+    기한 판정은 KST 기준이어야 자정~09시 사이에 어제 넘긴 기한이
+    '오늘 마감'으로 잘못 보이지 않는다."""
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            utc_instant = datetime(2026, 1, 1, 23, 30, tzinfo=timezone.utc)
+            return utc_instant.astimezone(tz) if tz else utc_instant
+
+    monkeypatch.setattr(commitment_service, "datetime", FixedDatetime)
+    assert commitment_service.today_kst() == date(2026, 1, 2)
 
 
 def test_summary_survives_commitment_failure(client, db_session, monkeypatch):

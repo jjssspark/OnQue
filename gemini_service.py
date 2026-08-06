@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import tempfile
 from datetime import datetime
@@ -10,6 +11,8 @@ from google import genai
 from google.genai import types
 
 from models import DOCUMENT_CATEGORIES
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -120,6 +123,34 @@ _CHAT_COMMITMENT_PROMPT = """
 """
 
 
+def _normalize_commitments(raw_commitments: object) -> list[dict]:
+    """모델이 뽑은 약속 목록을 검증·정제한다. 채팅 경로와 문서/통화 경로가 공유한다.
+
+    raw가 list가 아니거나(예: 모델이 "없음" 같은 문자열을 돌려줌) 항목이 dict가
+    아니면 조용히 걸러야 한다. 한쪽 경로에만 이 가드를 두면, 다른 쪽은 같은
+    입력에 그대로 죽는다 — 특히 채팅 경로는 실패 시 스캔 포인터가 멈추므로
+    같은 배치를 영원히 재시도하게 된다.
+    """
+    commitments = []
+    for item in raw_commitments if isinstance(raw_commitments, list) else []:
+        if not isinstance(item, dict):
+            continue
+        content = (item.get("content") or "").strip()
+        evidence = (item.get("evidence") or "").strip()
+        # 근거 없는 약속은 사람이 확인할 수 없고, 내용 없는 약속은 의미가 없다.
+        if not content or not evidence:
+            continue
+        commitments.append(
+            {
+                "content": content,
+                "client_name": (item.get("client_name") or "").strip(),
+                "due_date": (item.get("due_date") or "").strip(),
+                "evidence": evidence,
+            }
+        )
+    return commitments
+
+
 def extract_chat_commitments(history_text: str) -> list[dict] | None:
     """대화 이력에서 고객사 약속을 뽑는다.
 
@@ -142,8 +173,13 @@ def extract_chat_commitments(history_text: str) -> list[dict] | None:
             ),
         )
         data = json.loads(response.text)
-        return data.get("commitments") or []
+        return _normalize_commitments(data.get("commitments"))
     except Exception:
+        logger.warning(
+            "채팅 약속 추출 실패",
+            extra={"event": "commitment.chat_extraction.failed"},
+            exc_info=True,
+        )
         return None
 
 
@@ -203,24 +239,7 @@ def normalize_summary(raw: dict) -> dict:
             }
         )
 
-    commitments = []
-    raw_commitments = raw.get("commitments")
-    for item in raw_commitments if isinstance(raw_commitments, list) else []:
-        if not isinstance(item, dict):
-            continue
-        content = (item.get("content") or "").strip()
-        evidence = (item.get("evidence") or "").strip()
-        # 근거 없는 약속은 사람이 확인할 수 없고, 내용 없는 약속은 의미가 없다.
-        if not content or not evidence:
-            continue
-        commitments.append(
-            {
-                "content": content,
-                "client_name": (item.get("client_name") or "").strip(),
-                "due_date": (item.get("due_date") or "").strip(),
-                "evidence": evidence,
-            }
-        )
+    commitments = _normalize_commitments(raw.get("commitments"))
 
     return {
         "headline": (raw.get("headline") or "").strip(),

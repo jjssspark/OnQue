@@ -5,14 +5,17 @@
 
 import logging
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 import gemini_service
 from models import ChatMessage, ChatRoom, Client, Commitment, Group, COMMITMENT_STATUSES
 
 logger = logging.getLogger(__name__)
+
+KST = ZoneInfo("Asia/Seoul")
 
 # 기한 경고 기준. D-2 이내면 임박으로 본다.
 DUE_SOON_DAYS = 2
@@ -36,6 +39,15 @@ def apply_status(commitment: Commitment, target: str) -> None:
     commitment.status = target
     if target == "confirmed" and commitment.confirmed_at is None:
         commitment.confirmed_at = datetime.now(timezone.utc)
+
+
+def today_kst() -> date:
+    """Render는 UTC로 도는데 프롬프트는 이미 KST 기준(korean_date_context)이다.
+
+    서버 로컬(UTC) 자정~09시 사이에는 date.today()가 여전히 어제를 가리켜
+    어제 넘긴 기한이 "오늘 마감"으로 보인다. 기한 판정도 KST로 통일한다.
+    """
+    return datetime.now(KST).date()
 
 
 def due_flags(commitment: Commitment, today: date) -> tuple[bool, bool]:
@@ -152,23 +164,40 @@ def maybe_sweep(db: Session, group_id: int) -> int:
     Render 무료 티어에 상주 워커가 없어 백그라운드 스케줄러를 쓸 수 없다.
     아무도 접속하지 않으면 스윕도 안 돌지만, 그때는 알림을 볼 사람도 없다.
 
-    방은 서로 독립적으로 처리한다. 한 방의 실패가 다른 방의 결과나
-    last_swept_at 갱신까지 함께 날려버리면, 문제 있는 방 하나가 그룹 전체의
-    약속 탐지를 영구히 막고 쿨다운까지 무력화해 매 요청마다 전체를
-    재시도하게 만든다.
-    """
-    group = db.get(Group, group_id)
-    if group is None:
-        return 0
+    쿨다운은 조건부 UPDATE로 진입 시점에 "선점"한다. 두 요청이 동시에
+    들어오면 둘 다 SELECT로는 쿨다운을 통과해버려 같은 배치에 Gemini를
+    두 번 부르고 같은 약속을 중복 저장할 수 있다(유니크 제약이 없다).
+    UPDATE ... WHERE last_swept_at IS NULL OR < cutoff 는 원자적이라 한
+    요청만 rowcount=1로 이긴다 — 진 요청은 즉시 0을 반환한다.
 
+    방은 서로 독립적으로 처리한다. 한 방의 실패가 다른 방의 결과까지
+    날려버리면, 문제 있는 방 하나가 그룹 전체의 약속 탐지를 막는다.
+    쿨다운은 이미 진입 시점에 선점했으므로 방 실패와 무관하게 유지된다.
+
+    이 함수는 절대 던지지 않는다는 보장이 없다 — 쿨다운 선점 UPDATE와
+    방 목록 SELECT는 groups/chat_rooms의 매핑된 컬럼을 그대로 SELECT/UPDATE
+    하므로, 스키마 전환 창이나 커넥션 풀 고갈 중이면 예외가 그대로 샌다.
+    "스윕이 조회를 죽이면 안 된다"는 정책은 호출자(routers/commitments.py)의
+    책임이다 — 그쪽에서 try로 감싸고 WARN을 남긴다.
+    """
     now = datetime.now(timezone.utc)
-    if group.last_swept_at is not None:
-        last = group.last_swept_at
-        # SQLite는 tz 정보를 잃어버린다. UTC로 간주하고 비교한다.
-        if last.tzinfo is None:
-            last = last.replace(tzinfo=timezone.utc)
-        if now - last < timedelta(minutes=SWEEP_COOLDOWN_MINUTES):
-            return 0
+    cutoff = now - timedelta(minutes=SWEEP_COOLDOWN_MINUTES)
+    claimed = db.execute(
+        update(Group)
+        .where(
+            Group.id == group_id,
+            or_(Group.last_swept_at.is_(None), Group.last_swept_at < cutoff),
+        )
+        .values(last_swept_at=now)
+        # 세션에 이미 로드된 Group을 이 WHERE로 재평가하면 SQLite가 잃어버린
+        # tz 정보 때문에 naive/aware 비교 TypeError가 난다. DB에는 이미
+        # UPDATE가 반영되므로 동기화는 필요 없다 — 이후 코드는 이 그룹
+        # 객체의 last_swept_at을 다시 읽지 않는다.
+        .execution_options(synchronize_session=False)
+    )
+    db.commit()
+    if claimed.rowcount == 0:
+        return 0
 
     rooms = db.execute(
         select(ChatRoom).where(ChatRoom.group_id == group_id)
@@ -191,26 +220,5 @@ def maybe_sweep(db: Session, group_id: int) -> int:
                 },
                 exc_info=True,
             )
-
-    # last_swept_at은 스윕을 "시도했다"는 기록이지 "성공했다"는 기록이
-    # 아니다. 방이 전부 실패하거나 임계값을 못 넘겨도 쿨다운은 정상적으로
-    # 다시 걸려야 매 요청마다 그룹 전체를 재시도하는 일이 없다.
-    # 이 커밋까지 감싸야 maybe_sweep이 "절대 던지지 않는다"가 성립한다.
-    # 호출부(routers/commitments.py의 list_commitments)는 try 없이 부르고,
-    # main.py에는 HTTPException 핸들러밖에 없어 여기서 새어나간 예외는
-    # 봉투 없는 500이 된다. 스윕은 부가 작업이라 조회를 죽이면 안 된다.
-    try:
-        group.last_swept_at = now
-        db.commit()
-    except Exception:
-        db.rollback()
-        logger.warning(
-            "스윕 시각 기록 실패",
-            extra={
-                "event": "commitment.sweep.stamp_failed",
-                "group_id": group_id,
-            },
-            exc_info=True,
-        )
 
     return scanned

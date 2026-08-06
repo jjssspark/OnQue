@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 from sqlalchemy import select
 
 import commitment_service
-from models import ChatMessage, ChatRoom, Commitment, Group
+from models import ChatMessage, ChatRoom, ChatRoomMember, Commitment, Group
 
 
 def _seed_group(client, db_session, name="A팀", **group_kwargs):
@@ -39,6 +39,13 @@ def _make_room(db_session, group_id, message_count, created_by, name="A사 방")
     db_session.add(room)
     db_session.commit()
     db_session.refresh(room)
+    # 실제 방 생성 API(main.py의 create_chat_room)는 만든 사람을
+    # ChatRoomMember로 함께 넣는다. 여기서도 그래야 room-membership 가시성
+    # 필터(routers/commitments.py._visible_commitment_filter) 아래에서
+    # created_by 본인이 자기가 만든 방에서 나온 약속을 못 보는 비현실적인
+    # 상태가 되지 않는다.
+    db_session.add(ChatRoomMember(room_id=room.id, user_id=created_by))
+    db_session.commit()
     for i in range(message_count):
         db_session.add(
             ChatMessage(
@@ -272,6 +279,44 @@ def test_sweep_caps_messages_per_scan(client, db_session, monkeypatch):
     mock.assert_called_once()
     db_session.refresh(room)
     assert room.last_scanned_message_id == all_messages[-1].id
+
+
+def test_concurrent_sweep_second_caller_loses_to_the_first(client, db_session, monkeypatch):
+    """스윕 도중(Gemini 호출 시점)에 다른 요청이 같은 그룹을 스윕하려 하면
+    쿨다운 선점 때문에 즉시 0을 반환해야 한다 — 안 그러면 두 요청이 같은
+    배치에 Gemini를 두 번 부르고 같은 약속을 중복 저장한다(유니크 제약 없음).
+
+    진짜 스레드 동시성 대신, extractor 실행 도중 별도 세션으로 maybe_sweep을
+    재호출해 "겹치는 요청"을 결정론적으로 재현한다. 쿨다운 선점 UPDATE가
+    Gemini 호출보다 먼저 커밋돼 있어야만 두 번째 호출이 진입 즉시 막힌다.
+    """
+    from tests.conftest import TestSessionLocal
+
+    group = _seed_group(client, db_session)
+    _make_room(db_session, group.id, message_count=20, created_by=group.created_by)
+
+    second_call_result = {}
+
+    def extractor_that_races(text):
+        concurrent_session = TestSessionLocal()
+        try:
+            second_call_result["scanned"] = commitment_service.maybe_sweep(
+                concurrent_session, group.id
+            )
+        finally:
+            concurrent_session.close()
+        return _SAMPLE
+
+    monkeypatch.setattr(
+        commitment_service.gemini_service, "extract_chat_commitments", extractor_that_races
+    )
+
+    first_scanned = commitment_service.maybe_sweep(db_session, group.id)
+
+    assert first_scanned == 1
+    assert second_call_result["scanned"] == 0
+    # 중복 저장되지 않았는지도 함께 확인한다.
+    assert db_session.query(Commitment).count() == 1
 
 
 def test_list_endpoint_triggers_sweep(client, db_session, monkeypatch):
