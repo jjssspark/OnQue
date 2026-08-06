@@ -195,7 +195,22 @@ def maybe_sweep(db: Session, group_id: int) -> int:
     # last_swept_at은 스윕을 "시도했다"는 기록이지 "성공했다"는 기록이
     # 아니다. 방이 전부 실패하거나 임계값을 못 넘겨도 쿨다운은 정상적으로
     # 다시 걸려야 매 요청마다 그룹 전체를 재시도하는 일이 없다.
-    group.last_swept_at = now
-    db.commit()
+    # 이 커밋까지 감싸야 maybe_sweep이 "절대 던지지 않는다"가 성립한다.
+    # 호출부(routers/commitments.py의 list_commitments)는 try 없이 부르고,
+    # main.py에는 HTTPException 핸들러밖에 없어 여기서 새어나간 예외는
+    # 봉투 없는 500이 된다. 스윕은 부가 작업이라 조회를 죽이면 안 된다.
+    try:
+        group.last_swept_at = now
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning(
+            "스윕 시각 기록 실패",
+            extra={
+                "event": "commitment.sweep.stamp_failed",
+                "group_id": group_id,
+            },
+            exc_info=True,
+        )
 
     return scanned
