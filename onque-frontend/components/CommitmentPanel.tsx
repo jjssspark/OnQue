@@ -14,6 +14,10 @@ const SOURCE_LABEL: Record<CommitmentRecord['source_type'], string> = {
   chat: '채팅',
 };
 
+// 서버 기본 limit(20)에 걸리면 확인 필요 목록이 조용히 잘린다. 승인 게이트라
+// 누락이 곧 사고이므로 서버 최대값을 명시적으로 요청한다.
+const MAX_LIMIT = 100;
+
 export default function CommitmentPanel({ groupId }: { groupId: number }) {
   const [proposed, setProposed] = useState<CommitmentRecord[]>([]);
   const [tracked, setTracked] = useState<CommitmentRecord[]>([]);
@@ -27,11 +31,14 @@ export default function CommitmentPanel({ groupId }: { groupId: number }) {
     setError(null);
     try {
       // 조회가 스윕을 겸한다. proposed를 먼저 불러야 갓 추출된 항목이 반영된다.
-      const fresh = await getCommitments(groupId, 'proposed');
-      const confirmed = await getCommitments(groupId, 'confirmed');
+      // 두 요청은 순서를 지켜 순차로 보낸다 — 동시에 보내면 둘 다 스윕 쿨다운을
+      // 통과해 Gemini 호출이 중복될 수 있다.
+      const fresh = await getCommitments(groupId, 'proposed', MAX_LIMIT);
       setProposed(fresh);
-      setTracked(confirmed.filter((c) => c.is_overdue || c.is_due_soon));
       setSelected(new Set());
+
+      const confirmed = await getCommitments(groupId, 'confirmed', MAX_LIMIT);
+      setTracked(confirmed.filter((c) => c.is_overdue || c.is_due_soon));
     } catch (e) {
       setError(e instanceof Error ? e.message : '약속을 불러오지 못했습니다.');
     } finally {
@@ -112,9 +119,13 @@ export default function CommitmentPanel({ groupId }: { groupId: number }) {
       {isLoading ? (
         <p className="mt-4 text-xs text-foreground/40">불러오는 중...</p>
       ) : proposed.length === 0 ? (
-        <p className="mt-6 rounded-xl border border-dashed border-border p-6 text-center text-xs text-foreground/40">
-          확인할 약속이 없습니다.
-        </p>
+        // 조회 실패 중엔 이 메시지를 띄우지 않는다 — "없음"과 "실패해서 못 봄"은
+        // 승인 게이트에서 전혀 다른 의미라 혼동하면 확인 누락으로 이어진다.
+        !error && (
+          <p className="mt-6 rounded-xl border border-dashed border-border p-6 text-center text-xs text-foreground/40">
+            확인할 약속이 없습니다.
+          </p>
+        )
       ) : (
         <>
           <label className="mt-4 flex w-fit cursor-pointer items-center gap-2 text-[11px] text-foreground/40 hover:text-foreground/70">

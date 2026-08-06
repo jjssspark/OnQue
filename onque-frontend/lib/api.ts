@@ -372,9 +372,11 @@ export function createAnnouncement(title: string, content: string): Promise<Anno
 export function getCommitments(
   groupId: number,
   status?: CommitmentRecord['status'],
+  limit?: number,
 ): Promise<CommitmentRecord[]> {
   const params = new URLSearchParams({ group_id: String(groupId) });
   if (status) params.set('status', status);
+  if (limit) params.set('limit', String(limit));
   return requestEnveloped<CommitmentRecord[]>(`/api/v1/commitments?${params}`);
 }
 
