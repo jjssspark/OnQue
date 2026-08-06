@@ -97,6 +97,10 @@ def test_sweep_scans_room_at_threshold(client, db_session, monkeypatch):
     assert len(saved) == 1
     assert saved[0].source_type == "chat"
     assert saved[0].status == "proposed"
+    # 이 단언이 없으면 room_id를 채우는 한 줄을 지워도 스위트가 전부 통과한다.
+    # 그 상태로 배포되면 모든 채팅 약속이 "방이 삭제됨"으로 오판돼
+    # 비공개 방 대화 원문이 그룹 전원에게 공개된다.
+    assert saved[0].room_id == room.id
 
     db_session.refresh(room)
     assert room.last_scanned_message_id is not None

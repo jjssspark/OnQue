@@ -95,7 +95,14 @@ def create_commitments(
 
     room_id는 채팅 출처(source_type="chat")일 때만 의미가 있다 —
     가시성 판정(routers/commitments.py)이 이 값으로 방 멤버십을 확인한다.
+
+    채팅 출처인데 room_id가 없으면 거부한다. 새 규칙에서 NULL은 "방이
+    삭제됨 → 그룹 전원 공개"를 뜻하므로, 빠뜨리면 비공개 방 대화 원문이
+    조용히 전원에게 열린다. 기본값 None이 fail-open 방향이라 명시적으로 막는다.
     """
+    if source_type == "chat" and room_id is None:
+        raise ValueError("채팅 출처 약속에는 room_id가 필요하다")
+
     created: list[Commitment] = []
     for item in items:
         content = (item.get("content") or "").strip()

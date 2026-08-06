@@ -143,7 +143,7 @@ def test_create_commitments_stores_proposed(client, db_session):
 
 def test_create_commitments_with_empty_list(client, db_session):
     assert commitment_service.create_commitments(
-        db_session, group_id=1, items=[], source_type="chat", source_id=None
+        db_session, group_id=1, items=[], source_type="chat", source_id=None, room_id=1
     ) == []
     assert db_session.query(Commitment).count() == 0
 
