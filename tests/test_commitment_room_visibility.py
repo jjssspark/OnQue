@@ -4,6 +4,13 @@
 ChatRoomMember를 요구한다). 하지만 스윕은 그룹의 모든 방을 훑고
 Commitment.evidence에 대화 원문을 그대로 저장한 뒤 GET /api/v1/commitments가
 그룹 멤버 전원에게 내려준다 — 방 멤버십으로 다시 걸러야 한다.
+
+가시성은 Commitment.room_id로 직접 판정한다(source_id로 chat_messages를
+역참조하던 예전 방식은 사라졌다 — SQLite에서 메시지 id가 재사용될 수 있어
+엉뚱한 방 멤버에게 새는 latent bug가 있었다). 방이 삭제되면
+main.py._delete_room_cascade가 room_id를 NULL로 만들고, 그 순간부터는
+검사할 멤버십이 없으므로 그룹 전원에게 공개된다 — 조용히 사라지는 것보다
+낫다고 판단한 트레이드오프다.
 """
 
 from models import ChatMessage, ChatRoom, ChatRoomMember, Commitment, GroupMembership
@@ -86,7 +93,7 @@ def test_list_hides_chat_commitment_from_non_room_member(client, db_session):
     _add_to_group(db_session, ctx["outsider_id"], ctx["group_id"])
     room = _make_private_room(db_session, ctx["group_id"], ctx["owner_id"])
     message = _seed_message(db_session, room.id)
-    _seed_chat_commitment(db_session, ctx["group_id"], message.id)
+    _seed_chat_commitment(db_session, ctx["group_id"], message.id, room_id=room.id)
 
     outsider_res = client.get(
         "/api/v1/commitments",
@@ -110,7 +117,7 @@ def test_patch_forbidden_for_non_room_member(client, db_session):
     _add_to_group(db_session, ctx["outsider_id"], ctx["group_id"])
     room = _make_private_room(db_session, ctx["group_id"], ctx["owner_id"])
     message = _seed_message(db_session, room.id)
-    commitment = _seed_chat_commitment(db_session, ctx["group_id"], message.id)
+    commitment = _seed_chat_commitment(db_session, ctx["group_id"], message.id, room_id=room.id)
 
     res = client.patch(
         f"/api/v1/commitments/{commitment.id}",
@@ -137,7 +144,7 @@ def test_bulk_status_rejects_whole_batch_for_non_room_member(client, db_session)
     _add_to_group(db_session, ctx["outsider_id"], ctx["group_id"])
     room = _make_private_room(db_session, ctx["group_id"], ctx["owner_id"])
     message = _seed_message(db_session, room.id)
-    hidden = _seed_chat_commitment(db_session, ctx["group_id"], message.id)
+    hidden = _seed_chat_commitment(db_session, ctx["group_id"], message.id, room_id=room.id)
     visible = Commitment(
         group_id=ctx["group_id"],
         content="통화로 받은 약속",
@@ -171,29 +178,104 @@ def test_bulk_status_rejects_whole_batch_for_non_room_member(client, db_session)
     assert ok.json()["data"]["updated"] == 2
 
 
-def test_chat_commitment_with_null_source_id_is_invisible_even_to_room_member(
-    client, db_session
-):
-    """source_id가 없으면 어느 방 소속인지 알 수 없다 — fail-closed로 아무도 못 본다."""
+def test_chat_commitment_with_null_room_id_is_visible_to_group(client, db_session):
+    """room_id가 NULL이면 "방이 사라졌다"는 뜻이라 그룹 전원에게 공개된다.
+
+    예전 방식(source_id 역참조)에서는 참조가 끊기면 fail-closed로 숨겼지만,
+    이제는 room_id를 채팅 커밋 시점에 직접 저장하므로 NULL은 오직 방 삭제로만
+    발생한다 — 그래서 그룹 공개로 승격시키는 게 맞는 정책이다(TS 기록된
+    "방 삭제 → 약속 영구 은닉" 버그를 막는 선택).
+    """
     ctx = _setup_two_group_members(client)
+    _add_to_group(db_session, ctx["outsider_id"], ctx["group_id"])
     room = _make_private_room(db_session, ctx["group_id"], ctx["owner_id"])
-    _seed_message(db_session, room.id)  # 방 자체는 존재하지만 source_id로 안 쓴다
-    orphan = _seed_chat_commitment(db_session, ctx["group_id"], source_id=None)
+    message = _seed_message(db_session, room.id)
+    orphan = _seed_chat_commitment(
+        db_session, ctx["group_id"], message.id, room_id=None
+    )
 
     list_res = client.get(
         "/api/v1/commitments",
         params={"group_id": ctx["group_id"]},
-        headers=ctx["owner_headers"],
+        headers=ctx["outsider_headers"],
     )
-    assert list_res.json()["data"] == []
+    assert len(list_res.json()["data"]) == 1
 
     patch_res = client.patch(
         f"/api/v1/commitments/{orphan.id}",
         json={"status": "confirmed"},
+        headers=ctx["outsider_headers"],
+    )
+    assert patch_res.status_code == 200
+
+
+def test_deleting_room_makes_commitment_visible_to_non_member(client, db_session):
+    """방을 명시적으로 지우면 그 방에서 나온 약속이 조용히 사라지는 대신
+    그룹 전원에게 보이게 된다 (main.py._delete_room_cascade가 room_id를
+    NULL로 만든다)."""
+    ctx = _setup_two_group_members(client)
+    _add_to_group(db_session, ctx["outsider_id"], ctx["group_id"])
+    room = _make_private_room(db_session, ctx["group_id"], ctx["owner_id"])
+    message = _seed_message(db_session, room.id)
+    commitment = _seed_chat_commitment(
+        db_session, ctx["group_id"], message.id, room_id=room.id
+    )
+
+    # 방이 살아있는 동안은 원래의 Critical대로 비멤버에게 숨는다.
+    before = client.get(
+        "/api/v1/commitments",
+        params={"group_id": ctx["group_id"]},
+        headers=ctx["outsider_headers"],
+    )
+    assert before.json()["data"] == []
+
+    delete_res = client.delete(
+        f"/chat/rooms/{room.id}", headers=ctx["owner_headers"]
+    )
+    assert delete_res.status_code == 200
+
+    after = client.get(
+        "/api/v1/commitments",
+        params={"group_id": ctx["group_id"]},
+        headers=ctx["outsider_headers"],
+    )
+    ids = {c["id"] for c in after.json()["data"]}
+    assert commitment.id in ids
+
+    db_session.expire_all()
+    assert db_session.get(Commitment, commitment.id).room_id is None
+
+
+def test_last_member_leaving_auto_deletes_room_and_reveals_commitment(
+    client, db_session
+):
+    """마지막 멤버가 방을 나가 자동 삭제되는 경로도 명시적 삭제와 같은
+    결과를 내야 한다 — main.py:788-797의 자동 삭제도 같은 _delete_room_cascade를
+    타므로 room_id가 NULL이 된다."""
+    ctx = _setup_two_group_members(client)
+    _add_to_group(db_session, ctx["outsider_id"], ctx["group_id"])
+    room = _make_private_room(db_session, ctx["group_id"], ctx["owner_id"])
+    message = _seed_message(db_session, room.id)
+    commitment = _seed_chat_commitment(
+        db_session, ctx["group_id"], message.id, room_id=room.id
+    )
+
+    leave_res = client.delete(
+        f"/chat/rooms/{room.id}/members/{ctx['owner_id']}",
         headers=ctx["owner_headers"],
     )
-    assert patch_res.status_code == 403
-    assert patch_res.json()["error"]["code"] == "COMMITMENT_ACCESS_FORBIDDEN"
+    assert leave_res.status_code == 200
+
+    after = client.get(
+        "/api/v1/commitments",
+        params={"group_id": ctx["group_id"]},
+        headers=ctx["outsider_headers"],
+    )
+    ids = {c["id"] for c in after.json()["data"]}
+    assert commitment.id in ids
+
+    db_session.expire_all()
+    assert db_session.get(Commitment, commitment.id).room_id is None
 
 
 def test_call_and_document_sourced_commitments_are_unaffected_by_room_filter(

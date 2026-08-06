@@ -89,8 +89,13 @@ def create_commitments(
     items: list[dict],
     source_type: str,
     source_id: int | None,
+    room_id: int | None = None,
 ) -> list[Commitment]:
-    """추출된 약속을 proposed 상태로 저장한다. commit은 호출자가 한다."""
+    """추출된 약속을 proposed 상태로 저장한다. commit은 호출자가 한다.
+
+    room_id는 채팅 출처(source_type="chat")일 때만 의미가 있다 —
+    가시성 판정(routers/commitments.py)이 이 값으로 방 멤버십을 확인한다.
+    """
     created: list[Commitment] = []
     for item in items:
         content = (item.get("content") or "").strip()
@@ -105,6 +110,7 @@ def create_commitments(
             status="proposed",
             source_type=source_type,
             source_id=source_id,
+            room_id=room_id,
             evidence=evidence,
         )
         db.add(commitment)
@@ -153,6 +159,7 @@ def _scan_room(db: Session, room: ChatRoom) -> bool:
         items=items,
         source_type="chat",
         source_id=messages[-1].id,
+        room_id=room.id,
     )
     room.last_scanned_message_id = messages[-1].id
     return True

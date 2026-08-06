@@ -38,6 +38,14 @@ def _column_exists(conn, table: str, column: str) -> bool:
     return result.first() is not None
 
 
+def _table_exists(conn, table: str) -> bool:
+    result = conn.execute(
+        text("SELECT 1 FROM information_schema.tables WHERE table_name = :table"),
+        {"table": table},
+    )
+    return result.first() is not None
+
+
 def main() -> None:
     with engine.begin() as conn:
         if not _column_exists(conn, "chat_rooms", "last_scanned_message_id"):
@@ -64,6 +72,25 @@ def main() -> None:
             print("groups.last_swept_at 추가")
         else:
             print("groups.last_swept_at 이미 있음")
+
+        # commitments는 신규 테이블이다. 정상적인 흐름(이 스크립트 실행 →
+        # 배포 → main.py의 create_all)이면 이 시점에 아직 존재하지 않고,
+        # create_all이 room_id까지 포함해서 만든다 — ALTER를 시도하면
+        # "테이블이 없다" 에러만 난다. 따라서 테이블이 이미 존재하는
+        # 경우(재실행, 또는 순서를 어기고 배포부터 한 경우)에만 손댄다.
+        if _table_exists(conn, "commitments"):
+            if not _column_exists(conn, "commitments", "room_id"):
+                conn.execute(
+                    text(
+                        "ALTER TABLE commitments ADD COLUMN room_id INTEGER "
+                        "REFERENCES chat_rooms(id) ON DELETE SET NULL"
+                    )
+                )
+                print("commitments.room_id 추가")
+            else:
+                print("commitments.room_id 이미 있음")
+        else:
+            print("commitments 테이블 없음 — create_all이 room_id까지 함께 만든다")
 
 
 if __name__ == "__main__":

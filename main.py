@@ -688,7 +688,19 @@ def delete_chat_room(
 
 
 def _delete_room_cascade(db: Session, room: ChatRoom) -> None:
-    """자식 행을 먼저 지워야 외래키 제약에 걸리지 않는다. 커밋은 호출부가 한다."""
+    """자식 행을 먼저 지워야 외래키 제약에 걸리지 않는다. 커밋은 호출부가 한다.
+
+    Commitment.room_id는 DB의 ON DELETE SET NULL에 기대지 않고 여기서
+    애플리케이션이 직접 NULL로 만든다 — SQLite는 기본적으로 FK 제약을
+    강제하지 않아 그 캐스케이드가 발동하지 않고, 발동하는 Postgres와
+    엔진마다 동작이 갈리게 된다. 그리고 반드시 ChatRoomMember를 지우기
+    *전에* 해야 한다 — 순서를 바꾸면 "멤버는 이미 없는데 room_id는 아직
+    남아있는" 중간 상태가 생겨 그 사이 아무에게도 안 보이는 구간이 생긴다.
+    """
+    for commitment in db.scalars(
+        select(Commitment).where(Commitment.room_id == room.id)
+    ).all():
+        commitment.room_id = None
     for message in db.scalars(select(ChatMessage).where(ChatMessage.room_id == room.id)).all():
         db.delete(message)
     for member in db.scalars(

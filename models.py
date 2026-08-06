@@ -248,6 +248,13 @@ class Commitment(Base):
     source_type: Mapped[str] = mapped_column(Text, nullable=False)
     # documents.id 또는 chat_messages.id. 원본이 지워져도 약속은 남아야 하므로 FK를 걸지 않는다.
     source_id: Mapped[int | None] = mapped_column(nullable=True)
+    # 채팅 출처 약속의 가시성 판정용. source_id(메시지)를 역참조하지 않고 방을
+    # 직접 들고 있는다 — 방이 삭제되면 애플리케이션이 먼저 NULL로 만든다
+    # (main.py _delete_room_cascade). ON DELETE SET NULL은 그 처리가 어떤
+    # 이유로든 안 됐을 때의 최후 안전망이지 주 메커니즘이 아니다.
+    room_id: Mapped[int | None] = mapped_column(
+        ForeignKey("chat_rooms.id", ondelete="SET NULL"), nullable=True
+    )
     evidence: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

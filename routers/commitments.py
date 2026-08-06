@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 import commitment_service
 from auth import get_current_user
 from db import get_db
-from models import ChatMessage, ChatRoomMember, Client, Commitment, GroupMembership, User
+from models import ChatRoomMember, Client, Commitment, GroupMembership, User
 
 router = APIRouter(prefix="/api/v1", tags=["commitments"])
 
@@ -55,20 +55,22 @@ def _raise_commitment_forbidden() -> None:
 
 def _visible_commitment_filter(user_id: int):
     """채팅방은 그룹 전원이 아니라 초대된 사람만 볼 수 있다(main.py:588
-    _require_room_access와 같은 규칙). 하지만 스윕은 그룹의 모든 방을 훑어
+    _require_room_access와 같은 규칙). 스윕은 그룹의 모든 방을 훑어
     Commitment.evidence에 원문을 그대로 저장하므로, 조회 시점에 방 멤버십으로
     걸러야 비공개 방의 대화가 그룹 전원에게 새지 않는다.
 
-    call/document 출처는 방 개념이 없으므로 그대로 통과시킨다. source_id가
-    NULL인 채팅 출처는 어느 방인지 확인할 수 없으므로 fail-closed로 숨긴다
-    (IN (subquery)는 NULL에 대해 NULL/false로 평가되어 자연히 걸러진다).
+    call/document 출처는 방 개념이 없으므로 그대로 통과시킨다. 채팅 출처는
+    create_commitments 시점에 항상 room_id를 채워 저장하므로, room_id가
+    NULL이라는 건 그 방이 나중에 삭제됐다는 뜻뿐이다(main.py의
+    _delete_room_cascade가 삭제 시 NULL로 만든다) — 검사할 멤버십이 더는
+    없으므로 그룹 공개로 승격시킨다. 조용히 영구 은닉되는 것보다 낫다고
+    판단한 트레이드오프다.
     """
     allowed_rooms = select(ChatRoomMember.room_id).where(ChatRoomMember.user_id == user_id)
     return or_(
         Commitment.source_type != "chat",
-        Commitment.source_id.in_(
-            select(ChatMessage.id).where(ChatMessage.room_id.in_(allowed_rooms))
-        ),
+        Commitment.room_id.is_(None),
+        Commitment.room_id.in_(allowed_rooms),
     )
 
 
@@ -77,14 +79,9 @@ def _is_commitment_visible(db: Session, user_id: int, commitment: Commitment) ->
     같은 규칙을 단일 레코드에 적용한다."""
     if commitment.source_type != "chat":
         return True
-    if commitment.source_id is None:
-        return False
-    room_id = db.execute(
-        select(ChatMessage.room_id).where(ChatMessage.id == commitment.source_id)
-    ).scalar_one_or_none()
-    if room_id is None:
-        return False
-    return db.get(ChatRoomMember, {"room_id": room_id, "user_id": user_id}) is not None
+    if commitment.room_id is None:
+        return True
+    return db.get(ChatRoomMember, {"room_id": commitment.room_id, "user_id": user_id}) is not None
 
 
 def _serialize_client(c: Client) -> dict:
