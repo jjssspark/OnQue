@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from datetime import date, datetime
 
@@ -8,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+import commitment_service
 import gemini_service
 from db import Base, engine, get_db
 from routers.auth import router as auth_router
@@ -26,6 +28,8 @@ from models import (
     Todo,
     User,
 )
+
+logger = logging.getLogger(__name__)
 
 Base.metadata.create_all(bind=engine)
 
@@ -146,6 +150,27 @@ async def _summarize_and_store(
         for todo in created_todos:
             db.refresh(todo)
 
+    created_commitments: list = []
+    if structured:
+        # 약속 추출이 깨져도 요약은 살아야 한다. 요약을 인질로 잡지 않는다.
+        try:
+            created_commitments = commitment_service.create_commitments(
+                db,
+                group_id=group_id,
+                items=structured.get("commitments") or [],
+                source_type=source_type,
+                source_id=doc.id,
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.warning(
+                "약속 저장 실패",
+                extra={"event": "commitment.create.failed", "document_id": doc.id},
+                exc_info=True,
+            )
+            created_commitments = []
+
     return {
         "id": doc.id,
         "filename": doc.filename,
@@ -153,6 +178,7 @@ async def _summarize_and_store(
         "category": doc.category,
         "structured": structured,
         "created_todos": [_serialize_todo(t) for t in created_todos],
+        "created_commitments": len(created_commitments),
     }
 
 

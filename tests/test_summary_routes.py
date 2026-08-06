@@ -59,6 +59,7 @@ def test_normalize_summary_drops_empty_and_malformed_entries():
             {"content": "할 일", "due_date": "2026-08-18", "priority": "normal"}
         ],
         "notes": "",
+        "commitments": [],
     }
 
 

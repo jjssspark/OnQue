@@ -40,6 +40,10 @@ CALL_SUMMARY_PROMPT = """
   YYYY-MM-DD로, 언급되지 않았으면 빈 문자열. 급한 건은 priority를 high로.
   할 일이 없으면 빈 배열.
 - notes: 톤, 분위기, 리스크, 주의사항 등 참고 메모를 1~3줄. 없으면 빈 문자열.
+- commitments: 우리 쪽이 상대(고객사)에게 하기로 약속한 것만. action_items와 달리
+  내부 작업이 아니라 상대방에게 말한 약속이다. evidence에는 그렇게 판단한 근거
+  원문을 한 문장 그대로 옮긴다. "검토해볼게요" 같은 모호한 표현은 넣지 않는다.
+  약속이 없으면 빈 배열.
 
 규칙:
 - 통화와 직접 관련 없는 추측은 하지 말 것.
@@ -59,6 +63,10 @@ DOCUMENT_SUMMARY_PROMPT = """
   due_date에 YYYY-MM-DD로, 언급되지 않았으면 빈 문자열. 급한 건은 priority를
   high로. 할 일이 없으면 빈 배열.
 - notes: 리스크, 주의사항 등 참고 메모를 1~3줄. 없으면 빈 문자열.
+- commitments: 우리 쪽이 상대(고객사)에게 하기로 약속한 것만. action_items와 달리
+  내부 작업이 아니라 상대방에게 말한 약속이다. evidence에는 그렇게 판단한 근거
+  원문을 한 문장 그대로 옮긴다. "검토해볼게요" 같은 모호한 표현은 넣지 않는다.
+  약속이 없으면 빈 배열.
 
 규칙:
 - 문서와 직접 관련 없는 추측은 하지 말 것.
@@ -68,9 +76,29 @@ DOCUMENT_SUMMARY_PROMPT = """
 
 SUMMARY_PRIORITIES = ("high", "normal")
 
+_COMMITMENT_ITEM_SCHEMA = {
+    "type": "OBJECT",
+    "required": ["content", "client_name", "due_date", "evidence"],
+    "properties": {
+        "content": {"type": "STRING", "description": "약속한 산출물이나 행동."},
+        "client_name": {
+            "type": "STRING",
+            "description": "약속을 받은 상대 회사/담당자명. 특정 못하면 빈 문자열.",
+        },
+        "due_date": {
+            "type": "STRING",
+            "description": "YYYY-MM-DD 형식. 기한이 없으면 빈 문자열.",
+        },
+        "evidence": {
+            "type": "STRING",
+            "description": "그렇게 판단한 근거가 되는 원문 한 문장. 요약하지 말고 그대로 옮긴다.",
+        },
+    },
+}
+
 _SUMMARY_SCHEMA = {
     "type": "OBJECT",
-    "required": ["headline", "key_points", "requests", "action_items", "notes"],
+    "required": ["headline", "key_points", "requests", "action_items", "notes", "commitments"],
     "properties": {
         "headline": {"type": "STRING"},
         "key_points": {"type": "ARRAY", "items": {"type": "STRING"}},
@@ -91,6 +119,7 @@ _SUMMARY_SCHEMA = {
             },
         },
         "notes": {"type": "STRING"},
+        "commitments": {"type": "ARRAY", "items": _COMMITMENT_ITEM_SCHEMA},
     },
 }
 
@@ -123,12 +152,31 @@ def normalize_summary(raw: dict) -> dict:
             }
         )
 
+    commitments = []
+    for item in raw.get("commitments") or []:
+        if not isinstance(item, dict):
+            continue
+        content = (item.get("content") or "").strip()
+        evidence = (item.get("evidence") or "").strip()
+        # 근거 없는 약속은 사람이 확인할 수 없고, 내용 없는 약속은 의미가 없다.
+        if not content or not evidence:
+            continue
+        commitments.append(
+            {
+                "content": content,
+                "client_name": (item.get("client_name") or "").strip(),
+                "due_date": (item.get("due_date") or "").strip(),
+                "evidence": evidence,
+            }
+        )
+
     return {
         "headline": (raw.get("headline") or "").strip(),
         "key_points": _clean_list(raw.get("key_points")),
         "requests": _clean_list(raw.get("requests")),
         "action_items": action_items,
         "notes": (raw.get("notes") or "").strip(),
+        "commitments": commitments,
     }
 
 
