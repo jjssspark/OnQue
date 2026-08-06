@@ -66,8 +66,10 @@ def test_member_cannot_list_members_of_foreign_group(client):
     assert res.json()["error"]["code"] == "GROUP_ACCESS_FORBIDDEN"
 
 
-def test_group_members_returns_404_for_missing_group(client):
+def test_group_members_returns_403_for_missing_group(client):
+    # 권한 검사가 존재 확인보다 먼저다. 404로 나누면 비멤버가 그룹 id의
+    # 존재 여부를 알아낼 수 있어, 존재하지 않는 그룹도 403으로 응답한다.
     admin_token = _signup(client, "admin@onque.dev", "관리자")
     res = client.get("/api/v1/groups/9999/members", headers=_auth(admin_token))
-    assert res.status_code == 404
-    assert res.json()["error"]["code"] == "GROUP_NOT_FOUND"
+    assert res.status_code == 403
+    assert res.json()["error"]["code"] == "GROUP_ACCESS_FORBIDDEN"

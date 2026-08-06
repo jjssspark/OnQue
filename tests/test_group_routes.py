@@ -105,10 +105,18 @@ def test_member_cannot_add_member(client):
         json={"name": "행사기획팀"},
         headers={"Authorization": f"Bearer {admin_token}"},
     ).json()["data"]
+    # "other"가 이 그룹의 일반 멤버여야 "멤버는 못 한다"를 실제로 검증한다.
+    # 그룹에 속하지 않은 사람은 require_group_admin에서 더 앞서 GROUP_ACCESS_FORBIDDEN으로
+    # 걸러지므로, 이 테스트의 의도(관리자가 아닌 멤버의 거부)를 재현하지 못했었다.
+    client.post(
+        f"/api/v1/groups/{group['id']}/members",
+        json={"user_id": other_id},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
 
     res = client.post(
         f"/api/v1/groups/{group['id']}/members",
-        json={"user_id": other_id},
+        json={"user_id": member_id},
         headers={"Authorization": f"Bearer {other_token}"},
     )
     assert res.status_code == 403
@@ -169,7 +177,7 @@ def test_admin_can_remove_member_from_group(client):
 def test_member_cannot_remove_member(client):
     admin_token, _ = _signup(client, "admin@onque.dev")
     _, member_id = _signup(client, "member@onque.dev")
-    other_token, _ = _signup(client, "other@onque.dev")
+    other_token, other_id = _signup(client, "other@onque.dev")
     group = client.post(
         "/api/v1/groups",
         json={"name": "행사기획팀"},
@@ -180,6 +188,14 @@ def test_member_cannot_remove_member(client):
         json={"user_id": member_id},
         headers={"Authorization": f"Bearer {admin_token}"},
     )
+    # "other"가 이 그룹의 일반 멤버여야 "멤버는 못 한다"를 실제로 검증한다.
+    # 그룹에 속하지 않은 사람은 require_group_admin에서 더 앞서 GROUP_ACCESS_FORBIDDEN으로
+    # 걸러지므로, 이 테스트의 의도(관리자가 아닌 멤버의 거부)를 재현하지 못했었다.
+    client.post(
+        f"/api/v1/groups/{group['id']}/members",
+        json={"user_id": other_id},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
 
     res = client.delete(
         f"/api/v1/groups/{group['id']}/members/{member_id}",
@@ -187,3 +203,55 @@ def test_member_cannot_remove_member(client):
     )
     assert res.status_code == 403
     assert res.json()["error"]["code"] == "GROUP_MEMBER_ADD_FORBIDDEN"
+
+
+def test_member_list_returns_membership_role_not_user_role(client):
+    """필드명이 role 그대로라 값의 의미가 조용히 바뀐다. 테스트로 고정한다."""
+    owner = _signup_headers(client, "own@t.dev", "주인")
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
+    client.post(f"/api/v1/groups/{gid}/invitations", json={"email": "mem@t.dev"}, headers=owner)
+    _signup_headers(client, "mem@t.dev", "멤버")
+
+    rows = client.get(f"/api/v1/groups/{gid}/members", headers=owner).json()["data"]
+    assert {r["email"]: r["role"] for r in rows} == {"own@t.dev": "admin", "mem@t.dev": "member"}
+
+
+def test_member_cannot_invite(client):
+    owner = _signup_headers(client, "own2@t.dev", "주인")
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
+    client.post(f"/api/v1/groups/{gid}/invitations", json={"email": "mem2@t.dev"}, headers=owner)
+    member = _signup_headers(client, "mem2@t.dev", "멤버")
+
+    res = client.post(
+        f"/api/v1/groups/{gid}/invitations", json={"email": "x@t.dev"}, headers=member
+    )
+    assert res.status_code == 403
+    assert res.json()["error"]["code"] == "GROUP_INVITE_FORBIDDEN"
+
+
+def test_member_can_see_pending_invitations(client):
+    """초대는 못 하지만 누가 대기 중인지는 볼 수 있다 — 기존 동작."""
+    owner = _signup_headers(client, "own3@t.dev", "주인")
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
+    client.post(f"/api/v1/groups/{gid}/invitations", json={"email": "mem3@t.dev"}, headers=owner)
+    member = _signup_headers(client, "mem3@t.dev", "멤버")
+
+    assert client.get(f"/api/v1/groups/{gid}/invitations", headers=member).status_code == 200
+
+
+def test_outsider_gets_403_not_404_for_unknown_group(client):
+    """404로 나누면 그룹 id의 존재 여부가 새어나간다."""
+    headers = _signup_headers(client, "out@t.dev", "외부")
+    assert client.get("/api/v1/groups/99999/members", headers=headers).status_code == 403
+
+
+def test_cannot_remove_the_last_admin(client):
+    """전역 admin이 사라졌으므로, 마지막 관리자가 빠지면 그 팀은 아무도
+    초대할 수 없는 복구 불가 상태가 된다."""
+    owner = _signup_headers(client, "last@t.dev", "주인")
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
+    me = client.get("/api/v1/me", headers=owner).json()["data"]["user"]
+
+    res = client.delete(f"/api/v1/groups/{gid}/members/{me['id']}", headers=owner)
+    assert res.status_code == 409
+    assert res.json()["error"]["code"] == "GROUP_LAST_ADMIN"

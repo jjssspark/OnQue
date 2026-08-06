@@ -16,6 +16,7 @@ from models import (
     GroupMembership,
     User,
 )
+from permissions import require_group_admin, require_group_member
 
 router = APIRouter(prefix="/api/v1", tags=["groups"])
 
@@ -125,29 +126,22 @@ def list_group_members(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    group = db.get(Group, group_id)
-    if not group:
-        raise HTTPException(
-            status_code=404, detail={"code": "GROUP_NOT_FOUND", "message": "그룹을 찾을 수 없습니다."}
-        )
-    # 역할은 그룹마다 다르므로, 이 그룹에 속한 사람만 명단을 볼 수 있다.
-    if not db.get(GroupMembership, {"user_id": current_user.id, "group_id": group_id}):
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "GROUP_ACCESS_FORBIDDEN", "message": "이 그룹에 접근할 수 없습니다."},
-        )
+    require_group_member(current_user, group_id, db)
 
     memberships = db.scalars(
         select(GroupMembership).where(GroupMembership.group_id == group_id)
     ).all()
-    user_ids = [m.user_id for m in memberships]
+    role_by_user = {m.user_id: m.role for m in memberships}
     users = (
-        db.scalars(select(User).where(User.id.in_(user_ids))).all() if user_ids else []
+        db.scalars(select(User).where(User.id.in_(role_by_user))).all()
+        if role_by_user
+        else []
     )
     return {
         "success": True,
         "data": [
-            {"id": u.id, "email": u.email, "name": u.name, "role": u.role} for u in users
+            {"id": u.id, "email": u.email, "name": u.name, "role": role_by_user[u.id]}
+            for u in users
         ],
         "error": None,
     }
@@ -160,19 +154,10 @@ def add_group_member(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    requester_membership = db.get(
-        GroupMembership, {"user_id": current_user.id, "group_id": group_id}
+    require_group_admin(
+        current_user, group_id, db,
+        code="GROUP_MEMBER_ADD_FORBIDDEN", message="관리자만 가능한 작업입니다.",
     )
-    if not requester_membership or requester_membership.role != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "GROUP_MEMBER_ADD_FORBIDDEN", "message": "관리자만 가능한 작업입니다."},
-        )
-    group = db.get(Group, group_id)
-    if not group:
-        raise HTTPException(
-            status_code=404, detail={"code": "GROUP_NOT_FOUND", "message": "그룹을 찾을 수 없습니다."}
-        )
     target_user = db.get(User, body.user_id)
     if not target_user:
         raise HTTPException(
@@ -221,18 +206,10 @@ def invite_to_group_by_email(
     db: Session = Depends(get_db),
 ):
     """이메일로 초대한다. 아직 가입 전이면 대기 상태로 남고, 가입 시 자동 합류한다."""
-    requester_membership = db.get(
-        GroupMembership, {"user_id": current_user.id, "group_id": group_id}
+    require_group_admin(
+        current_user, group_id, db,
+        code="GROUP_INVITE_FORBIDDEN", message="관리자만 초대할 수 있습니다.",
     )
-    if not requester_membership or requester_membership.role != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "GROUP_INVITE_FORBIDDEN", "message": "관리자만 초대할 수 있습니다."},
-        )
-    if not db.get(Group, group_id):
-        raise HTTPException(
-            status_code=404, detail={"code": "GROUP_NOT_FOUND", "message": "그룹을 찾을 수 없습니다."}
-        )
 
     email = body.email.strip().lower()
 
@@ -291,15 +268,7 @@ def list_group_invitations(
     db: Session = Depends(get_db),
 ):
     """아직 가입하지 않은 대기 초대만. 합류한 사람은 멤버 목록에서 보인다."""
-    if not db.get(Group, group_id):
-        raise HTTPException(
-            status_code=404, detail={"code": "GROUP_NOT_FOUND", "message": "그룹을 찾을 수 없습니다."}
-        )
-    if not db.get(GroupMembership, {"user_id": current_user.id, "group_id": group_id}):
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "GROUP_ACCESS_FORBIDDEN", "message": "이 그룹에 접근할 수 없습니다."},
-        )
+    require_group_member(current_user, group_id, db)
 
     invitations = db.scalars(
         select(GroupInvitation)
@@ -323,14 +292,10 @@ def cancel_group_invitation(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    requester_membership = db.get(
-        GroupMembership, {"user_id": current_user.id, "group_id": group_id}
+    require_group_admin(
+        current_user, group_id, db,
+        code="GROUP_INVITE_FORBIDDEN", message="관리자만 초대를 취소할 수 있습니다.",
     )
-    if not requester_membership or requester_membership.role != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "GROUP_INVITE_FORBIDDEN", "message": "관리자만 초대를 취소할 수 있습니다."},
-        )
     inv = db.get(GroupInvitation, invitation_id)
     if not inv or inv.group_id != group_id:
         raise HTTPException(
@@ -349,15 +314,27 @@ def remove_group_member(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    requester_membership = db.get(
-        GroupMembership, {"user_id": current_user.id, "group_id": group_id}
+    require_group_admin(
+        current_user, group_id, db,
+        code="GROUP_MEMBER_ADD_FORBIDDEN", message="관리자만 가능한 작업입니다.",
     )
-    if not requester_membership or requester_membership.role != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "GROUP_MEMBER_ADD_FORBIDDEN", "message": "관리자만 가능한 작업입니다."},
-        )
     membership = db.get(GroupMembership, {"user_id": user_id, "group_id": group_id})
+    if membership and membership.role == "admin":
+        admin_count = db.scalar(
+            select(func.count())
+            .select_from(GroupMembership)
+            .where(GroupMembership.group_id == group_id, GroupMembership.role == "admin")
+        )
+        if admin_count <= 1:
+            # 전역 admin이 없어졌으므로 관리자가 0명이 되면 아무도 초대할 수
+            # 없고 밖에서 고쳐줄 사람도 없다.
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "GROUP_LAST_ADMIN",
+                    "message": "팀의 마지막 관리자는 내보낼 수 없습니다.",
+                },
+            )
     if membership:
         db.delete(membership)
         # 그룹에서 빼면 방 접근은 이미 막히지만, 방 멤버 목록에는 계속 보인다. 같이 정리한다.
