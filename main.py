@@ -18,6 +18,7 @@ from routers.users import router as users_router
 from routers.announcements import router as announcements_router
 from routers.commitments import router as commitments_router
 from auth import get_current_user
+from permissions import require_group_member
 from models import (
     ChatMessage,
     ChatRoom,
@@ -85,15 +86,6 @@ def _hint_matches(text: str, hint: str) -> bool:
     if not a or not b:
         return False
     return a in b or b in a
-
-
-def _require_group_member(user: User, group_id: int, db: Session) -> None:
-    membership = db.get(GroupMembership, {"user_id": user.id, "group_id": group_id})
-    if not membership:
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "GROUP_ACCESS_FORBIDDEN", "message": "해당 그룹에 소속되어 있지 않습니다."},
-        )
 
 
 # ── 통화/문서 요약 ──────────────────────────────────────────
@@ -192,7 +184,7 @@ async def summarize_call(
     db: Session = Depends(get_db),
 ):
     """통화 녹음 파일(mp3, m4a, wav 등)을 받아 Gemini로 요약하고 이력에 저장한다."""
-    _require_group_member(current_user, group_id, db)
+    require_group_member(current_user, group_id, db)
 
     if not file.content_type or not file.content_type.startswith("audio/"):
         raise HTTPException(
@@ -223,7 +215,7 @@ async def summarize_document(
     db: Session = Depends(get_db),
 ):
     """문서/회의록 파일(pdf, txt, md)을 받아 Gemini로 요약·분류하고 이력에 저장한다."""
-    _require_group_member(current_user, group_id, db)
+    require_group_member(current_user, group_id, db)
 
     suffix = os.path.splitext(file.filename or "")[1].lower()
     if suffix not in ALLOWED_DOCUMENT_EXTENSIONS:
@@ -269,7 +261,7 @@ def list_documents(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_group_member(current_user, group_id, db)
+    require_group_member(current_user, group_id, db)
     docs = db.scalars(
         select(Document)
         .where(
@@ -292,7 +284,7 @@ def delete_document(
     if not doc:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
     if doc.group_id is not None:
-        _require_group_member(current_user, doc.group_id, db)
+        require_group_member(current_user, doc.group_id, db)
     elif current_user.role != "admin":
         raise HTTPException(
             status_code=403,
@@ -334,7 +326,7 @@ def list_todos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_group_member(current_user, group_id, db)
+    require_group_member(current_user, group_id, db)
     todos = db.scalars(
         select(Todo)
         .where(Todo.group_id == group_id)
@@ -350,7 +342,7 @@ def create_todo(
     db: Session = Depends(get_db),
 ):
     """요약 리포트에서 액션 아이템을 골라 등록할 때 쓰는 수동 생성 엔드포인트."""
-    _require_group_member(current_user, body.group_id, db)
+    require_group_member(current_user, body.group_id, db)
 
     content = body.content.strip()
     if not content:
@@ -380,7 +372,7 @@ def update_todo(
     todo = db.get(Todo, todo_id)
     if not todo:
         raise HTTPException(status_code=404, detail="할 일을 찾을 수 없습니다.")
-    _require_group_member(current_user, todo.group_id, db)
+    require_group_member(current_user, todo.group_id, db)
     if body.is_done is not None:
         todo.is_done = body.is_done
     if body.content is not None:
@@ -401,7 +393,7 @@ def delete_todo(
     todo = db.get(Todo, todo_id)
     if not todo:
         raise HTTPException(status_code=404, detail="할 일을 찾을 수 없습니다.")
-    _require_group_member(current_user, todo.group_id, db)
+    require_group_member(current_user, todo.group_id, db)
     db.delete(todo)
     db.commit()
     return {"deleted": True}
@@ -434,7 +426,7 @@ def create_schedule(
     db: Session = Depends(get_db),
 ):
     if body.group_id is not None:
-        _require_group_member(current_user, body.group_id, db)
+        require_group_member(current_user, body.group_id, db)
     elif current_user.role != "admin":
         raise HTTPException(
             status_code=403,
@@ -459,7 +451,7 @@ def list_schedules(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_group_member(current_user, group_id, db)
+    require_group_member(current_user, group_id, db)
     schedules = db.scalars(
         select(Schedule)
         .where((Schedule.group_id == group_id) | (Schedule.group_id.is_(None)))
@@ -479,7 +471,7 @@ def update_schedule(
     if not schedule:
         raise HTTPException(status_code=404, detail="일정을 찾을 수 없습니다.")
     if schedule.group_id is not None:
-        _require_group_member(current_user, schedule.group_id, db)
+        require_group_member(current_user, schedule.group_id, db)
     elif current_user.role != "admin":
         raise HTTPException(
             status_code=403,
@@ -506,7 +498,7 @@ def delete_schedule(
     if not schedule:
         raise HTTPException(status_code=404, detail="일정을 찾을 수 없습니다.")
     if schedule.group_id is not None:
-        _require_group_member(current_user, schedule.group_id, db)
+        require_group_member(current_user, schedule.group_id, db)
     elif current_user.role != "admin":
         raise HTTPException(
             status_code=403,
@@ -594,7 +586,7 @@ def _require_room_access(user: User, room_id: int, db: Session) -> ChatRoom:
             detail={"code": "CHAT_ROOM_NOT_FOUND", "message": "채팅방을 찾을 수 없습니다."},
         )
     # 그룹을 먼저 본다. 그룹 밖 사람에게 "초대되지 않았다"고 알려주면 방의 존재가 새어나간다.
-    _require_group_member(user, room.group_id, db)
+    require_group_member(user, room.group_id, db)
     if not db.get(ChatRoomMember, {"room_id": room.id, "user_id": user.id}):
         raise HTTPException(
             status_code=403,
@@ -613,7 +605,7 @@ def list_chat_rooms(
     db: Session = Depends(get_db),
 ):
     """내가 초대된 방만, 마지막 메시지 미리보기까지 함께 내려준다."""
-    _require_group_member(current_user, group_id, db)
+    require_group_member(current_user, group_id, db)
 
     rooms = db.scalars(
         select(ChatRoom)
@@ -648,7 +640,7 @@ def create_chat_room(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_group_member(current_user, body.group_id, db)
+    require_group_member(current_user, body.group_id, db)
 
     name = body.name.strip()
     if not name:
