@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { MetricStrip, type Metric } from '@/components/MetricStrip';
+import CommitmentPanel from '@/components/CommitmentPanel';
 import { getDocuments, type DocumentRecord } from '@/lib/api';
 
 const MODULES = [
@@ -149,6 +150,10 @@ export default function DashboardPage() {
 
       <div className="mt-6">
         <MetricStrip metrics={metrics} />
+      </div>
+
+      <div className="mt-6">
+        <CommitmentPanel groupId={currentGroupId} />
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[1.4fr_1fr]">

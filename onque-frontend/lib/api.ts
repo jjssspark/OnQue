@@ -116,6 +116,21 @@ export type InviteResult =
   | { status: 'joined'; email: string; user: { id: number; email: string; name: string } }
   | { status: 'pending'; email: string; invitation: GroupInvitation };
 
+export type CommitmentRecord = {
+  id: number;
+  content: string;
+  client_id: number | null;
+  client_name: string | null;
+  due_date: string | null;
+  status: 'proposed' | 'confirmed' | 'fulfilled' | 'dismissed';
+  source_type: 'call' | 'document' | 'chat';
+  source_id: number | null;
+  evidence: string;
+  is_overdue: boolean;
+  is_due_soon: boolean;
+  created_at: string;
+};
+
 export type AnnouncementRecord = {
   id: number;
   title: string;
@@ -351,5 +366,24 @@ export function createAnnouncement(title: string, content: string): Promise<Anno
   return requestEnveloped('/api/v1/announcements', {
     method: 'POST',
     body: JSON.stringify({ title, content }),
+  });
+}
+
+export function getCommitments(
+  groupId: number,
+  status?: CommitmentRecord['status'],
+): Promise<CommitmentRecord[]> {
+  const params = new URLSearchParams({ group_id: String(groupId) });
+  if (status) params.set('status', status);
+  return requestEnveloped<CommitmentRecord[]>(`/api/v1/commitments?${params}`);
+}
+
+export function bulkUpdateCommitments(
+  ids: number[],
+  status: CommitmentRecord['status'],
+): Promise<{ updated: number }> {
+  return requestEnveloped<{ updated: number }>('/api/v1/commitments/bulk-status', {
+    method: 'POST',
+    body: JSON.stringify({ ids, status }),
   });
 }
