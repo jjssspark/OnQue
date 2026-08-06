@@ -22,6 +22,7 @@ from models import (
     ChatMessage,
     ChatRoom,
     ChatRoomMember,
+    Commitment,
     Document,
     GroupMembership,
     Schedule,
@@ -150,7 +151,7 @@ async def _summarize_and_store(
         for todo in created_todos:
             db.refresh(todo)
 
-    created_commitments: list = []
+    created_commitments: list[Commitment] = []
     if structured:
         # 약속 추출이 깨져도 요약은 살아야 한다. 요약을 인질로 잡지 않는다.
         try:

@@ -153,7 +153,8 @@ def normalize_summary(raw: dict) -> dict:
         )
 
     commitments = []
-    for item in raw.get("commitments") or []:
+    raw_commitments = raw.get("commitments")
+    for item in raw_commitments if isinstance(raw_commitments, list) else []:
         if not isinstance(item, dict):
             continue
         content = (item.get("content") or "").strip()

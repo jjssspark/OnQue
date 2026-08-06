@@ -53,6 +53,31 @@ def test_normalize_summary_drops_commitment_without_evidence():
     assert normalize_summary(raw)["commitments"] == []
 
 
+def test_normalize_summary_handles_non_list_commitments_as_scalar():
+    """모델이 commitments를 리스트가 아닌 값으로 뱉어도 예외 없이 빈 리스트가 된다."""
+    raw = {
+        "headline": "",
+        "key_points": [],
+        "requests": [],
+        "action_items": [],
+        "notes": "",
+        "commitments": 42,
+    }
+    assert normalize_summary(raw)["commitments"] == []
+
+
+def test_normalize_summary_handles_non_list_commitments_as_string():
+    raw = {
+        "headline": "",
+        "key_points": [],
+        "requests": [],
+        "action_items": [],
+        "notes": "",
+        "commitments": "약속 없음",
+    }
+    assert normalize_summary(raw)["commitments"] == []
+
+
 def test_resolve_client_id_matches_existing(client, db_session):
     a = Client(group_id=1, name="A사")
     db_session.add(a)
