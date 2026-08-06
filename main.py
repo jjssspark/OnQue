@@ -14,6 +14,7 @@ from routers.auth import router as auth_router
 from routers.groups import router as groups_router
 from routers.users import router as users_router
 from routers.announcements import router as announcements_router
+from routers.commitments import router as commitments_router
 from auth import get_current_user
 from models import (
     ChatMessage,
@@ -57,6 +58,7 @@ app.include_router(auth_router)
 app.include_router(groups_router)
 app.include_router(announcements_router)
 app.include_router(users_router)
+app.include_router(commitments_router)
 
 
 @app.get("/")
