@@ -4,12 +4,13 @@
 """
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from models import Client, Commitment, COMMITMENT_STATUSES
+import gemini_service
+from models import ChatMessage, ChatRoom, Client, Commitment, Group, COMMITMENT_STATUSES
 
 logger = logging.getLogger(__name__)
 
@@ -97,3 +98,73 @@ def create_commitments(
         db.add(commitment)
         created.append(commitment)
     return created
+
+
+SWEEP_COOLDOWN_MINUTES = 10
+# 이보다 적게 쌓인 방은 훑지 않는다. 한산한 방은 영영 안 훑일 수 있으나,
+# 그런 방에서 놓칠 약속은 적고 사용자는 명령어로 직접 부를 수 있다.
+CHAT_SCAN_THRESHOLD = 15
+
+
+def _scan_room(db: Session, room: ChatRoom) -> bool:
+    """방 하나를 훑는다. 실제로 스캔했으면 True."""
+    query = select(ChatMessage).where(ChatMessage.room_id == room.id)
+    if room.last_scanned_message_id is not None:
+        query = query.where(ChatMessage.id > room.last_scanned_message_id)
+    messages = db.execute(query.order_by(ChatMessage.id)).scalars().all()
+
+    if len(messages) < CHAT_SCAN_THRESHOLD:
+        return False
+
+    history = "\n".join(f"{m.sender}: {m.content}" for m in messages)
+    items = gemini_service.extract_chat_commitments(history)
+    create_commitments(
+        db,
+        group_id=room.group_id,
+        items=items,
+        source_type="chat",
+        source_id=messages[-1].id,
+    )
+    room.last_scanned_message_id = messages[-1].id
+    return True
+
+
+def maybe_sweep(db: Session, group_id: int) -> int:
+    """요청에 편승해 돌리는 자율 점검. 스캔한 방 수를 돌려준다.
+
+    Render 무료 티어에 상주 워커가 없어 백그라운드 스케줄러를 쓸 수 없다.
+    아무도 접속하지 않으면 스윕도 안 돌지만, 그때는 알림을 볼 사람도 없다.
+    """
+    group = db.get(Group, group_id)
+    if group is None:
+        return 0
+
+    now = datetime.now(timezone.utc)
+    if group.last_swept_at is not None:
+        last = group.last_swept_at
+        # SQLite는 tz 정보를 잃어버린다. UTC로 간주하고 비교한다.
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        if now - last < timedelta(minutes=SWEEP_COOLDOWN_MINUTES):
+            return 0
+
+    scanned = 0
+    try:
+        rooms = db.execute(
+            select(ChatRoom).where(ChatRoom.group_id == group_id)
+        ).scalars().all()
+        for room in rooms:
+            if _scan_room(db, room):
+                scanned += 1
+        group.last_swept_at = now
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning(
+            "스윕 실패",
+            extra={"event": "commitment.sweep.failed", "group_id": group_id},
+            exc_info=True,
+        )
+        return 0
+
+    return scanned

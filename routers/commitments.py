@@ -146,6 +146,7 @@ def list_commitments(
     db: Session = Depends(get_db),
 ):
     _require_group_member(current_user, group_id, db)
+    commitment_service.maybe_sweep(db, group_id)
 
     query = select(Commitment).where(Commitment.group_id == group_id)
     if status is not None:

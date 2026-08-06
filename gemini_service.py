@@ -96,6 +96,54 @@ _COMMITMENT_ITEM_SCHEMA = {
     },
 }
 
+_CHAT_COMMITMENT_SCHEMA = {
+    "type": "OBJECT",
+    "required": ["commitments"],
+    "properties": {
+        "commitments": {"type": "ARRAY", "items": _COMMITMENT_ITEM_SCHEMA},
+    },
+}
+
+_CHAT_COMMITMENT_PROMPT = """
+너는 대행사 팀 채팅을 지켜보는 비서다.
+아래 [대화]에서 우리 쪽이 고객사에게 하기로 약속한 것만 뽑아라.
+
+규칙:
+- 내부 업무 분담이나 팀원끼리의 다짐은 약속이 아니다. 상대(고객사)에게 말한 것만.
+- "검토해볼게요", "확인해보겠습니다" 같은 모호한 표현은 넣지 않는다.
+  산출물이나 행동이 특정되는 것만 넣는다.
+- evidence에는 그렇게 판단한 근거가 되는 대화 원문 한 줄을 그대로 옮긴다. 요약하지 않는다.
+- 날짜는 위에 주어진 오늘 날짜를 기준으로 YYYY-MM-DD 절대 날짜로 변환한다.
+  기한이 없으면 빈 문자열.
+- 약속이 없으면 빈 배열을 돌려준다. 억지로 만들지 않는다.
+- 이모지, 서론, 마크다운 기호를 쓰지 말 것.
+"""
+
+
+def extract_chat_commitments(history_text: str) -> list[dict]:
+    """대화 이력에서 고객사 약속을 뽑는다. 실패 시 빈 리스트.
+
+    스윕은 부가 작업이라 여기서 예외를 밖으로 던지지 않는다.
+    extract_chat_actions와 같은 방침.
+    """
+    prompt = (
+        f"{korean_date_context()}\n\n{_CHAT_COMMITMENT_PROMPT}\n\n[대화]\n{history_text}"
+    )
+    try:
+        response = client.models.generate_content(
+            model=MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=_CHAT_COMMITMENT_SCHEMA,
+            ),
+        )
+        data = json.loads(response.text)
+        return data.get("commitments") or []
+    except Exception:
+        return []
+
+
 _SUMMARY_SCHEMA = {
     "type": "OBJECT",
     "required": ["headline", "key_points", "requests", "action_items", "notes", "commitments"],
