@@ -7,20 +7,10 @@ from sqlalchemy.orm import Session
 
 from auth import create_access_token, get_current_user, hash_password, verify_password
 from db import get_db
-from models import (
-    DEFAULT_CHAT_ROOM_NAME,
-    ChatRoom,
-    ChatRoomMember,
-    Group,
-    GroupInvitation,
-    GroupMembership,
-    User,
-)
-from routers.groups import get_user_groups, join_group
+from models import GroupInvitation, User
+from routers.groups import get_user_groups_with_role, join_group
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
-
-DEFAULT_GROUP_NAME = "기본 그룹"
 
 
 class SignupBody(BaseModel):
@@ -35,7 +25,7 @@ class LoginBody(BaseModel):
 
 
 def _serialize_user(user: User) -> dict:
-    return {"id": user.id, "email": user.email, "name": user.name, "role": user.role}
+    return {"id": user.id, "email": user.email, "name": user.name}
 
 
 @router.post("/auth/signup")
@@ -47,32 +37,15 @@ def signup(body: SignupBody, db: Session = Depends(get_db)):
             detail={"code": "USER_EMAIL_DUPLICATE", "message": "이미 가입된 이메일입니다."},
         )
 
-    is_first_user = db.scalar(select(User).limit(1)) is None
     user = User(
         email=body.email,
         password_hash=hash_password(body.password),
         name=body.name,
-        role="admin" if is_first_user else "member",
+        role="member",
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-
-    # 첫 가입자는 관리자이자 워크스페이스의 시작점이다. 기본 그룹까지 만들어줘야
-    # 로그인 직후 빈 화면을 마주하지 않는다.
-    if is_first_user:
-        group = Group(name=DEFAULT_GROUP_NAME, created_by=user.id)
-        db.add(group)
-        db.commit()
-        db.refresh(group)
-        db.add(GroupMembership(user_id=user.id, group_id=group.id))
-        room = ChatRoom(
-            group_id=group.id, name=DEFAULT_CHAT_ROOM_NAME, created_by=user.id
-        )
-        db.add(room)
-        db.flush()
-        db.add(ChatRoomMember(room_id=room.id, user_id=user.id))
-        db.commit()
 
     # 가입 전에 받아둔 초대를 여기서 정산한다. 이 단계가 없으면 초대가 영영 닿지 않는다.
     pending = db.scalars(
@@ -114,13 +87,11 @@ def login(body: LoginBody, db: Session = Depends(get_db)):
 
 @router.get("/me")
 def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    groups = get_user_groups(current_user.id, db)
-
     return {
         "success": True,
         "data": {
             "user": _serialize_user(current_user),
-            "groups": [{"id": g.id, "name": g.name} for g in groups],
+            "groups": get_user_groups_with_role(current_user.id, db),
         },
         "error": None,
     }

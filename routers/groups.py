@@ -20,14 +20,6 @@ from models import (
 router = APIRouter(prefix="/api/v1", tags=["groups"])
 
 
-def _require_admin(user: User) -> None:
-    if user.role != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "GROUP_CREATE_FORBIDDEN", "message": "관리자만 가능한 작업입니다."},
-        )
-
-
 def join_group(db: Session, user_id: int, group_id: int) -> None:
     """그룹에 합류시킨다. 커밋은 호출부가 한다.
 
@@ -37,7 +29,7 @@ def join_group(db: Session, user_id: int, group_id: int) -> None:
     if db.get(GroupMembership, {"user_id": user_id, "group_id": group_id}):
         return
 
-    db.add(GroupMembership(user_id=user_id, group_id=group_id))
+    db.add(GroupMembership(user_id=user_id, group_id=group_id, role="member"))
     default_room = db.scalars(
         select(ChatRoom)
         .where(ChatRoom.group_id == group_id, ChatRoom.name == DEFAULT_CHAT_ROOM_NAME)
@@ -58,6 +50,25 @@ def get_user_groups(user_id: int, db: Session) -> list[Group]:
     return db.scalars(select(Group).where(Group.id.in_(group_ids))).all() if group_ids else []
 
 
+def get_user_groups_with_role(user_id: int, db: Session) -> list[dict]:
+    """/me 응답용. 그룹 안에서의 역할까지 함께 내려줘야 프론트가 관리자 UI를 분기한다."""
+    memberships = db.scalars(
+        select(GroupMembership).where(GroupMembership.user_id == user_id)
+    ).all()
+    if not memberships:
+        return []
+    groups_by_id = {
+        g.id: g
+        for g in db.scalars(
+            select(Group).where(Group.id.in_([m.group_id for m in memberships]))
+        ).all()
+    }
+    return [
+        {"id": m.group_id, "name": groups_by_id[m.group_id].name, "role": m.role}
+        for m in memberships
+    ]
+
+
 class GroupCreateBody(BaseModel):
     name: str
 
@@ -76,12 +87,15 @@ def create_group(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_admin(current_user)
+    """인증된 사용자면 누구나 팀을 만들 수 있고, 만든 사람이 그 팀의 관리자가 된다.
+
+    그룹·멤버십·기본 방을 한 트랜잭션에서 만든다. 나눠 커밋하면 중간에
+    실패했을 때 멤버십 없는 고아 그룹이 남고, 만든 사람조차 접근할 수 없다.
+    """
     group = Group(name=body.name, created_by=current_user.id)
     db.add(group)
-    db.commit()
-    db.refresh(group)
-    db.add(GroupMembership(user_id=current_user.id, group_id=group.id))
+    db.flush()
+    db.add(GroupMembership(user_id=current_user.id, group_id=group.id, role="admin"))
     room = ChatRoom(
         group_id=group.id, name=DEFAULT_CHAT_ROOM_NAME, created_by=current_user.id
     )
@@ -89,6 +103,7 @@ def create_group(
     db.flush()
     db.add(ChatRoomMember(room_id=room.id, user_id=current_user.id))
     db.commit()
+    db.refresh(group)
     return {"success": True, "data": {"id": group.id, "name": group.name}, "error": None}
 
 
@@ -115,16 +130,12 @@ def list_group_members(
         raise HTTPException(
             status_code=404, detail={"code": "GROUP_NOT_FOUND", "message": "그룹을 찾을 수 없습니다."}
         )
-    # 관리자가 아니면 자신이 속한 그룹의 명단만 볼 수 있다.
-    if current_user.role != "admin":
-        is_member = db.get(
-            GroupMembership, {"user_id": current_user.id, "group_id": group_id}
+    # 역할은 그룹마다 다르므로, 이 그룹에 속한 사람만 명단을 볼 수 있다.
+    if not db.get(GroupMembership, {"user_id": current_user.id, "group_id": group_id}):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "GROUP_ACCESS_FORBIDDEN", "message": "이 그룹에 접근할 수 없습니다."},
         )
-        if not is_member:
-            raise HTTPException(
-                status_code=403,
-                detail={"code": "GROUP_ACCESS_FORBIDDEN", "message": "이 그룹에 접근할 수 없습니다."},
-            )
 
     memberships = db.scalars(
         select(GroupMembership).where(GroupMembership.group_id == group_id)
@@ -149,7 +160,10 @@ def add_group_member(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user.role != "admin":
+    requester_membership = db.get(
+        GroupMembership, {"user_id": current_user.id, "group_id": group_id}
+    )
+    if not requester_membership or requester_membership.role != "admin":
         raise HTTPException(
             status_code=403,
             detail={"code": "GROUP_MEMBER_ADD_FORBIDDEN", "message": "관리자만 가능한 작업입니다."},
@@ -207,7 +221,10 @@ def invite_to_group_by_email(
     db: Session = Depends(get_db),
 ):
     """이메일로 초대한다. 아직 가입 전이면 대기 상태로 남고, 가입 시 자동 합류한다."""
-    if current_user.role != "admin":
+    requester_membership = db.get(
+        GroupMembership, {"user_id": current_user.id, "group_id": group_id}
+    )
+    if not requester_membership or requester_membership.role != "admin":
         raise HTTPException(
             status_code=403,
             detail={"code": "GROUP_INVITE_FORBIDDEN", "message": "관리자만 초대할 수 있습니다."},
@@ -278,9 +295,7 @@ def list_group_invitations(
         raise HTTPException(
             status_code=404, detail={"code": "GROUP_NOT_FOUND", "message": "그룹을 찾을 수 없습니다."}
         )
-    if current_user.role != "admin" and not db.get(
-        GroupMembership, {"user_id": current_user.id, "group_id": group_id}
-    ):
+    if not db.get(GroupMembership, {"user_id": current_user.id, "group_id": group_id}):
         raise HTTPException(
             status_code=403,
             detail={"code": "GROUP_ACCESS_FORBIDDEN", "message": "이 그룹에 접근할 수 없습니다."},
@@ -308,7 +323,10 @@ def cancel_group_invitation(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user.role != "admin":
+    requester_membership = db.get(
+        GroupMembership, {"user_id": current_user.id, "group_id": group_id}
+    )
+    if not requester_membership or requester_membership.role != "admin":
         raise HTTPException(
             status_code=403,
             detail={"code": "GROUP_INVITE_FORBIDDEN", "message": "관리자만 초대를 취소할 수 있습니다."},
@@ -331,7 +349,10 @@ def remove_group_member(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if current_user.role != "admin":
+    requester_membership = db.get(
+        GroupMembership, {"user_id": current_user.id, "group_id": group_id}
+    )
+    if not requester_membership or requester_membership.role != "admin":
         raise HTTPException(
             status_code=403,
             detail={"code": "GROUP_MEMBER_ADD_FORBIDDEN", "message": "관리자만 가능한 작업입니다."},

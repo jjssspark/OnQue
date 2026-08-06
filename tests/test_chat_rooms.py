@@ -26,16 +26,18 @@ def test_group_creation_makes_a_default_room(client):
 
 
 def test_signup_first_user_gets_default_room(client):
+    """가입만으로는 그룹이 생기지 않는다. 그룹을 만들어야 기본 방이 함께 생긴다."""
     admin = _signup(client, "first@onque.dev", "첫가입자")
     token = admin["token"]
-    groups = client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"}).json()["data"][
-        "groups"
-    ]
+    headers = {"Authorization": f"Bearer {token}"}
+    group_id = client.post(
+        "/api/v1/groups", json={"name": "첫팀"}, headers=headers
+    ).json()["data"]["id"]
 
     rooms = client.get(
         "/chat/rooms",
-        params={"group_id": groups[0]["id"]},
-        headers={"Authorization": f"Bearer {token}"},
+        params={"group_id": group_id},
+        headers=headers,
     ).json()
     assert [r["name"] for r in rooms] == ["일반"]
 

@@ -1,23 +1,25 @@
-def test_signup_first_user_becomes_admin(client):
+def test_signup_response_no_longer_exposes_global_role(client):
+    """역할은 그룹 소속 속성이 됐다. 사용자 객체에 role이 남아 있으면
+    프론트가 계속 그걸 읽어 잘못된 관리자 UI를 띄운다."""
     res = client.post(
         "/api/v1/auth/signup",
-        json={"email": "admin@onque.dev", "password": "password123", "name": "관리자"},
+        json={"email": "norole@t.dev", "password": "password123", "name": "역할없음"},
     )
-    assert res.status_code == 200
-    body = res.json()
-    assert body["success"] is True
-    assert body["data"]["user"]["role"] == "admin"
-    assert body["data"]["token"]
+    assert "role" not in res.json()["data"]["user"]
 
 
-def test_signup_first_user_gets_default_group(client):
+def test_signup_then_explicit_group_creation_shows_up_in_me(client):
+    """더 이상 가입만으로 그룹이 생기지 않는다. 명시적으로 만들어야
+    /me에 나타난다."""
     signup = client.post(
         "/api/v1/auth/signup",
         json={"email": "admin@onque.dev", "password": "password123", "name": "관리자"},
     )
     token = signup.json()["data"]["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/v1/groups", json={"name": "기본 그룹"}, headers=headers)
 
-    res = client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
+    res = client.get("/api/v1/me", headers=headers)
     groups = res.json()["data"]["groups"]
     assert len(groups) == 1
     assert groups[0]["name"] == "기본 그룹"
@@ -36,18 +38,6 @@ def test_signup_second_user_has_no_group_until_invited(client):
 
     res = client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
     assert res.json()["data"]["groups"] == []
-
-
-def test_signup_second_user_becomes_member(client):
-    client.post(
-        "/api/v1/auth/signup",
-        json={"email": "admin@onque.dev", "password": "password123", "name": "관리자"},
-    )
-    res = client.post(
-        "/api/v1/auth/signup",
-        json={"email": "member@onque.dev", "password": "password123", "name": "직원"},
-    )
-    assert res.json()["data"]["user"]["role"] == "member"
 
 
 def test_signup_duplicate_email_returns_409(client):
@@ -119,8 +109,10 @@ def test_me_returns_current_user_and_groups(client):
         json={"email": "me@onque.dev", "password": "password123", "name": "나"},
     )
     token = signup.json()["data"]["token"]
-    res = client.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
+    headers = {"Authorization": f"Bearer {token}"}
+    client.post("/api/v1/groups", json={"name": "내 그룹"}, headers=headers)
+
+    res = client.get("/api/v1/me", headers=headers)
     assert res.status_code == 200
     assert res.json()["data"]["user"]["email"] == "me@onque.dev"
-    # 첫 가입자이므로 기본 그룹이 함께 생성된다.
-    assert [g["name"] for g in res.json()["data"]["groups"]] == ["기본 그룹"]
+    assert [g["name"] for g in res.json()["data"]["groups"]] == ["내 그룹"]
