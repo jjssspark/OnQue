@@ -6,6 +6,7 @@ import { useAuth } from '@/components/AuthContext';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { MetricStrip, type Metric } from '@/components/MetricStrip';
 import CommitmentPanel from '@/components/CommitmentPanel';
+import ClientPanel from '@/components/ClientPanel';
 import { getDocuments, type DocumentRecord } from '@/lib/api';
 
 const MODULES = [
@@ -152,8 +153,9 @@ export default function DashboardPage() {
         <MetricStrip metrics={metrics} />
       </div>
 
-      <div className="mt-6">
+      <div className="mt-6 grid gap-5 lg:grid-cols-[2fr_1fr]">
         <CommitmentPanel groupId={currentGroupId} />
+        <ClientPanel groupId={currentGroupId} />
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[1.4fr_1fr]">

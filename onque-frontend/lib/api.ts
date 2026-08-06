@@ -20,7 +20,14 @@ export type MeResponse = {
   groups: GroupSummary[];
 };
 
-type Envelope<T> = { success: boolean; data: T; error: { code: string; message: string } | null };
+export type ListMeta = { total: number; limit: number; hasNext: boolean };
+
+type Envelope<T> = {
+  success: boolean;
+  data: T;
+  error: { code: string; message: string } | null;
+  meta?: ListMeta;
+};
 
 export type ActionItem = {
   content: string;
@@ -116,6 +123,12 @@ export type InviteResult =
   | { status: 'joined'; email: string; user: { id: number; email: string; name: string } }
   | { status: 'pending'; email: string; invitation: GroupInvitation };
 
+export type Client = {
+  id: number;
+  name: string;
+  created_at: string;
+};
+
 export type CommitmentRecord = {
   id: number;
   content: string;
@@ -168,6 +181,17 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 async function requestEnveloped<T>(path: string, options?: RequestInit): Promise<T> {
   const envelope = await request<Envelope<T>>(path, options);
   return envelope.data;
+}
+
+/** requestEnveloped와 같은 언랩이지만 목록 조회의 meta(전체 개수 등)도 함께 돌려준다.
+ * 화면에 온 개수와 서버가 가진 전체 개수가 다를 수 있는 목록(예: 약속 확인 필요 큐)에서
+ * 조용한 잘림을 막으려면 meta가 필요하다. */
+async function requestEnvelopedWithMeta<T>(
+  path: string,
+  options?: RequestInit,
+): Promise<{ data: T; meta: ListMeta | null }> {
+  const envelope = await request<Envelope<T>>(path, options);
+  return { data: envelope.data, meta: envelope.meta ?? null };
 }
 
 async function postFile(path: string, file: File): Promise<SummaryResponse> {
@@ -378,6 +402,29 @@ export function getCommitments(
   if (status) params.set('status', status);
   if (limit) params.set('limit', String(limit));
   return requestEnveloped<CommitmentRecord[]>(`/api/v1/commitments?${params}`);
+}
+
+/** getCommitments와 같은 조회지만 meta(전체 개수)도 함께 필요할 때 쓴다. */
+export function getCommitmentsPage(
+  groupId: number,
+  status?: CommitmentRecord['status'],
+  limit?: number,
+): Promise<{ data: CommitmentRecord[]; meta: ListMeta | null }> {
+  const params = new URLSearchParams({ group_id: String(groupId) });
+  if (status) params.set('status', status);
+  if (limit) params.set('limit', String(limit));
+  return requestEnvelopedWithMeta<CommitmentRecord[]>(`/api/v1/commitments?${params}`);
+}
+
+export function getClients(groupId: number): Promise<Client[]> {
+  return requestEnveloped<Client[]>(`/api/v1/clients?group_id=${groupId}`);
+}
+
+export function createClient(groupId: number, name: string): Promise<Client> {
+  return requestEnveloped<Client>('/api/v1/clients', {
+    method: 'POST',
+    body: JSON.stringify({ group_id: groupId, name }),
+  });
 }
 
 export function bulkUpdateCommitments(

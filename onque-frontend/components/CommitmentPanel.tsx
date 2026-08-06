@@ -5,7 +5,9 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   bulkUpdateCommitments,
   getCommitments,
+  getCommitmentsPage,
   type CommitmentRecord,
+  type ListMeta,
 } from '@/lib/api';
 
 const SOURCE_LABEL: Record<CommitmentRecord['source_type'], string> = {
@@ -20,6 +22,7 @@ const MAX_LIMIT = 100;
 
 export default function CommitmentPanel({ groupId }: { groupId: number }) {
   const [proposed, setProposed] = useState<CommitmentRecord[]>([]);
+  const [proposedMeta, setProposedMeta] = useState<ListMeta | null>(null);
   const [tracked, setTracked] = useState<CommitmentRecord[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
@@ -33,8 +36,9 @@ export default function CommitmentPanel({ groupId }: { groupId: number }) {
       // 조회가 스윕을 겸한다. proposed를 먼저 불러야 갓 추출된 항목이 반영된다.
       // 두 요청은 순서를 지켜 순차로 보낸다 — 동시에 보내면 둘 다 스윕 쿨다운을
       // 통과해 Gemini 호출이 중복될 수 있다.
-      const fresh = await getCommitments(groupId, 'proposed', MAX_LIMIT);
+      const { data: fresh, meta } = await getCommitmentsPage(groupId, 'proposed', MAX_LIMIT);
       setProposed(fresh);
+      setProposedMeta(meta);
       setSelected(new Set());
 
       const confirmed = await getCommitments(groupId, 'confirmed', MAX_LIMIT);
@@ -58,6 +62,11 @@ export default function CommitmentPanel({ groupId }: { groupId: number }) {
       return next;
     });
   };
+
+  // meta는 서버가 필터링을 마친 뒤의 진짜 전체 개수다. 화면에 온 배열 길이(최대
+  // MAX_LIMIT)로 배지를 채우면 그보다 많을 때 "다 확인했다"는 착각을 준다.
+  const totalProposed = proposedMeta?.total ?? proposed.length;
+  const hasMoreProposed = proposedMeta?.hasNext ?? false;
 
   const allSelected = proposed.length > 0 && selected.size === proposed.length;
 
@@ -85,12 +94,19 @@ export default function CommitmentPanel({ groupId }: { groupId: number }) {
         <h2 className="text-sm font-bold text-foreground">확인 필요</h2>
         <span
           className={`rounded-full px-2 py-0.5 font-mono text-[11px] font-semibold ${
-            proposed.length > 0 ? 'bg-brand/10 text-brand' : 'text-foreground/30'
+            totalProposed > 0 ? 'bg-brand/10 text-brand' : 'text-foreground/30'
           }`}
         >
-          {proposed.length}건
+          {totalProposed}건
         </span>
       </div>
+
+      {hasMoreProposed && (
+        <p className="mt-1 text-[11px] leading-relaxed text-foreground/40">
+          최근 {proposed.length}건만 표시 중입니다. 전체 {totalProposed}건 중 나머지는 아직 이
+          목록에 없습니다.
+        </p>
+      )}
 
       {error && (
         <p role="alert" className="mt-3 text-xs leading-relaxed text-red-500">
