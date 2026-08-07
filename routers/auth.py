@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from auth import create_access_token, get_current_user, hash_password, verify_password
 from db import get_db
-from models import GroupInvitation, User
+from models import Group, GroupInvitation, User
 from routers.groups import get_user_groups_with_role, join_group
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
@@ -137,3 +137,88 @@ def change_my_password(
     current_user.password_hash = hash_password(body.new_password)
     db.commit()
     return {"success": True, "data": {"changed": True}, "error": None}
+
+
+def _pending_invitation_for(db: Session, user: User, invitation_id: int) -> GroupInvitation:
+    """내 이메일로 온 대기 초대만 돌려준다.
+
+    남의 초대나 이미 수락된 초대는 404다. 403으로 나누면 초대 id의 존재
+    여부가 새어나간다 — permissions.py가 그룹에서 쓴 것과 같은 원칙이다.
+    """
+    inv = db.get(GroupInvitation, invitation_id)
+    if (
+        inv is None
+        or inv.accepted_at is not None
+        or inv.email.lower() != user.email.lower()
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "INVITATION_NOT_FOUND", "message": "초대를 찾을 수 없습니다."},
+        )
+    return inv
+
+
+@router.get("/me/invitations")
+def list_my_invitations(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    rows = db.execute(
+        select(
+            GroupInvitation.id,
+            GroupInvitation.group_id,
+            Group.name,
+            User.name,
+            GroupInvitation.created_at,
+        )
+        .join(Group, Group.id == GroupInvitation.group_id)
+        .join(User, User.id == GroupInvitation.invited_by)
+        .where(
+            func.lower(GroupInvitation.email) == current_user.email.lower(),
+            GroupInvitation.accepted_at.is_(None),
+        )
+        .order_by(GroupInvitation.created_at.desc())
+    ).all()
+
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": inv_id,
+                "group_id": group_id,
+                "group_name": group_name,
+                "invited_by_name": inviter_name,
+                "created_at": created_at.isoformat(),
+            }
+            for inv_id, group_id, group_name, inviter_name, created_at in rows
+        ],
+        "error": None,
+    }
+
+
+@router.post("/me/invitations/{invitation_id}/accept")
+def accept_my_invitation(
+    invitation_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    inv = _pending_invitation_for(db, current_user, invitation_id)
+    join_group(db, current_user.id, inv.group_id)
+    inv.accepted_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"success": True, "data": {"group_id": inv.group_id}, "error": None}
+
+
+@router.delete("/me/invitations/{invitation_id}")
+def decline_my_invitation(
+    invitation_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """거절은 행을 지운다. declined_at 컬럼을 두면 Alembic 없는 이 프로젝트에서
+    마이그레이션 배포가 한 번 더 필요해지는데, 사내 규모에서 거절 이력의
+    값이 그 비용보다 작다. 관리자가 다시 초대하면 새 행이 생긴다."""
+    inv = _pending_invitation_for(db, current_user, invitation_id)
+    db.delete(inv)
+    db.commit()
+    return {"success": True, "data": {"declined": True}, "error": None}

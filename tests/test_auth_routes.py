@@ -182,3 +182,110 @@ def test_global_user_list_endpoint_is_gone(client):
     """다른 조직 사용자의 이메일이 새어나가는 구멍이었고 쓰는 화면도 없었다."""
     headers = _signup(client, "p7@t.dev", "F")
     assert client.get("/api/v1/users", headers=headers).status_code == 404
+
+
+def _make_pending_invitation(db_session, group_id: int, email: str, invited_by: int) -> int:
+    """대기 초대를 직접 만든다. 초대 엔드포인트는 Task 2 전까지 가입자를 즉시
+    합류시키므로, 대기 상태를 만들려면 행을 직접 넣어야 한다."""
+    from models import GroupInvitation
+
+    inv = GroupInvitation(group_id=group_id, email=email, invited_by=invited_by)
+    db_session.add(inv)
+    db_session.commit()
+    return inv.id
+
+
+def test_my_invitations_lists_only_mine(client, db_session):
+    owner = _signup(client, "inv-own@t.dev", "주인")
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
+    owner_id = client.get("/api/v1/me", headers=owner).json()["data"]["user"]["id"]
+
+    guest = _signup(client, "inv-guest@t.dev", "손님")
+    _signup(client, "inv-other@t.dev", "남")
+    _make_pending_invitation(db_session, gid, "inv-guest@t.dev", owner_id)
+    _make_pending_invitation(db_session, gid, "inv-other@t.dev", owner_id)
+
+    rows = client.get("/api/v1/me/invitations", headers=guest).json()["data"]
+    assert [r["group_id"] for r in rows] == [gid]
+    assert rows[0]["group_name"] == "A팀"
+    assert rows[0]["invited_by_name"] == "주인"
+
+
+def test_invitation_is_not_membership_until_accepted(client, db_session):
+    """이 변경의 존재 이유. 초대만으로 팀에 들어가면 안 된다."""
+    owner = _signup(client, "inv2-own@t.dev", "주인")
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
+    owner_id = client.get("/api/v1/me", headers=owner).json()["data"]["user"]["id"]
+
+    guest = _signup(client, "inv2-guest@t.dev", "손님")
+    _make_pending_invitation(db_session, gid, "inv2-guest@t.dev", owner_id)
+
+    assert client.get("/api/v1/me", headers=guest).json()["data"]["groups"] == []
+
+
+def test_accepting_an_invitation_joins_as_member(client, db_session):
+    owner = _signup(client, "inv3-own@t.dev", "주인")
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
+    owner_id = client.get("/api/v1/me", headers=owner).json()["data"]["user"]["id"]
+
+    guest = _signup(client, "inv3-guest@t.dev", "손님")
+    inv_id = _make_pending_invitation(db_session, gid, "inv3-guest@t.dev", owner_id)
+
+    assert client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=guest).status_code == 200
+
+    groups = client.get("/api/v1/me", headers=guest).json()["data"]["groups"]
+    assert [(g["id"], g["role"]) for g in groups] == [(gid, "member")]
+    assert client.get("/api/v1/me/invitations", headers=guest).json()["data"] == []
+
+
+def test_declining_removes_the_invitation_without_joining(client, db_session):
+    owner = _signup(client, "inv4-own@t.dev", "주인")
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
+    owner_id = client.get("/api/v1/me", headers=owner).json()["data"]["user"]["id"]
+
+    guest = _signup(client, "inv4-guest@t.dev", "손님")
+    inv_id = _make_pending_invitation(db_session, gid, "inv4-guest@t.dev", owner_id)
+
+    assert client.delete(f"/api/v1/me/invitations/{inv_id}", headers=guest).status_code == 200
+    assert client.get("/api/v1/me/invitations", headers=guest).json()["data"] == []
+    assert client.get("/api/v1/me", headers=guest).json()["data"]["groups"] == []
+
+
+def test_cannot_accept_someone_elses_invitation(client, db_session):
+    """403으로 나누면 초대 id의 존재 여부가 새어나간다."""
+    owner = _signup(client, "inv5-own@t.dev", "주인")
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
+    owner_id = client.get("/api/v1/me", headers=owner).json()["data"]["user"]["id"]
+
+    _signup(client, "inv5-target@t.dev", "대상")
+    attacker = _signup(client, "inv5-attacker@t.dev", "공격")
+    inv_id = _make_pending_invitation(db_session, gid, "inv5-target@t.dev", owner_id)
+
+    res = client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=attacker)
+    assert res.status_code == 404
+    assert res.json()["error"]["code"] == "INVITATION_NOT_FOUND"
+    assert client.delete(f"/api/v1/me/invitations/{inv_id}", headers=attacker).status_code == 404
+
+
+def test_accepting_twice_is_not_found_the_second_time(client, db_session):
+    owner = _signup(client, "inv6-own@t.dev", "주인")
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
+    owner_id = client.get("/api/v1/me", headers=owner).json()["data"]["user"]["id"]
+
+    guest = _signup(client, "inv6-guest@t.dev", "손님")
+    inv_id = _make_pending_invitation(db_session, gid, "inv6-guest@t.dev", owner_id)
+
+    assert client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=guest).status_code == 200
+    assert client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=guest).status_code == 404
+
+
+def test_invitation_email_matching_ignores_case(client, db_session):
+    """가입 컬럼은 대소문자를 구분해 저장한다. 초대 이메일도 마찬가지다."""
+    owner = _signup(client, "inv7-own@t.dev", "주인")
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
+    owner_id = client.get("/api/v1/me", headers=owner).json()["data"]["user"]["id"]
+
+    guest = _signup(client, "inv7-Guest@t.dev", "손님")
+    _make_pending_invitation(db_session, gid, "inv7-guest@t.dev", owner_id)
+
+    assert len(client.get("/api/v1/me/invitations", headers=guest).json()["data"]) == 1
