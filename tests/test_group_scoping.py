@@ -62,9 +62,16 @@ def test_todo_patch_rejects_cross_group_access(client, db_session):
     ).json()["data"]
     member_token = member_signup["token"]
     client.post(
-        f"/api/v1/groups/{group_a}/members",
-        json={"user_id": member_signup["user"]["id"]},
+        f"/api/v1/groups/{group_a}/invitations",
+        json={"email": "a-member@onque.dev"},
         headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    inv_id = client.get(
+        "/api/v1/me/invitations", headers={"Authorization": f"Bearer {member_token}"}
+    ).json()["data"][0]["id"]
+    client.post(
+        f"/api/v1/me/invitations/{inv_id}/accept",
+        headers={"Authorization": f"Bearer {member_token}"},
     )
 
     res = client.patch(
@@ -173,6 +180,9 @@ def test_group_member_can_delete_group_document(client, db_session):
     gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
     client.post(f"/api/v1/groups/{gid}/invitations", json={"email": "d2@t.dev"}, headers=owner)
     member = _signup(client, "d2@t.dev", "멤버")
+    # 초대만으로는 합류하지 않는다. 수락해야 멤버가 된다.
+    inv_id = client.get("/api/v1/me/invitations", headers=member).json()["data"][0]["id"]
+    client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=member)
 
     doc = Document(
         group_id=gid, source_type="document", category="기타",

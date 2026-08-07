@@ -72,8 +72,8 @@ class GroupMembership(Base):
 class GroupInvitation(Base):
     """가입 전인 사람도 미리 초대해 두기 위한 대기 초대.
 
-    같은 이메일로 가입하는 순간 자동으로 그룹에 합류한다. 이게 없으면 상대가
-    먼저 가입할 때까지 초대를 보낼 방법이 없다.
+    가입만으로는 그룹에 합류하지 않는다. 초대받은 사람이 직접 수락해야
+    합류한다. 이게 없으면 상대가 먼저 가입할 때까지 초대를 보낼 방법이 없다.
     """
 
     __tablename__ = "group_invitations"
@@ -89,7 +89,7 @@ class GroupInvitation(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    # 합류하면 시각이 찍힌다. None이면 아직 대기 중.
+    # 수락하면 시각이 찍힌다. None이면 아직 대기 중.
     accepted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

@@ -9,6 +9,14 @@ def _auth(token):
     return {"Authorization": f"Bearer {token}"}
 
 
+def _invite_and_accept(client, admin_auth, group_id, email, member_auth):
+    client.post(
+        f"/api/v1/groups/{group_id}/invitations", json={"email": email}, headers=admin_auth
+    )
+    inv_id = client.get("/api/v1/me/invitations", headers=member_auth).json()["data"][0]["id"]
+    client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=member_auth)
+
+
 def _setup(client):
     """관리자 + 같은 그룹의 일반 멤버 한 명."""
     admin = _signup(client, "admin@onque.dev", "관리자")
@@ -18,10 +26,8 @@ def _setup(client):
     ).json()["data"]["id"]
 
     member = _signup(client, "member@onque.dev", "직원")
-    client.post(
-        f"/api/v1/groups/{group_id}/members",
-        json={"user_id": member["user"]["id"]},
-        headers=admin_auth,
+    _invite_and_accept(
+        client, admin_auth, group_id, "member@onque.dev", _auth(member["token"])
     )
     return admin, member, group_id
 
@@ -101,10 +107,8 @@ def test_invited_member_can_invite_someone_else(client):
     )
 
     third = _signup(client, "third@onque.dev", "신입")
-    client.post(
-        f"/api/v1/groups/{group_id}/members",
-        json={"user_id": third["user"]["id"]},
-        headers=_auth(admin["token"]),
+    _invite_and_accept(
+        client, _auth(admin["token"]), group_id, "third@onque.dev", _auth(third["token"])
     )
 
     res = client.post(
