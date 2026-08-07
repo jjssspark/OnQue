@@ -7,12 +7,20 @@ export type AuthUser = {
   id: number;
   email: string;
   name: string;
-  role: 'admin' | 'member';
 };
 
 export type GroupSummary = {
   id: number;
   name: string;
+  role: 'admin' | 'member';
+};
+
+/** 그룹 멤버 목록의 각 행. role은 그 그룹에서의 역할(전역 role 아님). */
+export type GroupMember = {
+  id: number;
+  name: string;
+  email: string;
+  role: 'admin' | 'member';
 };
 
 export type MeResponse = {
@@ -337,10 +345,6 @@ export function getMe(): Promise<MeResponse> {
   return requestEnveloped('/api/v1/me');
 }
 
-export function listUsers(): Promise<AuthUser[]> {
-  return requestEnveloped('/api/v1/users');
-}
-
 export function createGroup(name: string): Promise<GroupSummary> {
   return requestEnveloped('/api/v1/groups', {
     method: 'POST',
@@ -348,7 +352,21 @@ export function createGroup(name: string): Promise<GroupSummary> {
   });
 }
 
-export function listGroupMembers(groupId: number): Promise<AuthUser[]> {
+export function updateMyName(name: string) {
+  return requestEnveloped('/api/v1/me', {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function changeMyPassword(currentPassword: string, newPassword: string) {
+  return requestEnveloped('/api/v1/me/password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+}
+
+export function listGroupMembers(groupId: number): Promise<GroupMember[]> {
   return requestEnveloped(`/api/v1/groups/${groupId}/members`);
 }
 
@@ -382,14 +400,23 @@ export function cancelGroupInvitation(groupId: number, invitationId: number): Pr
   });
 }
 
-export function listAnnouncements(): Promise<AnnouncementRecord[]> {
-  return requestEnveloped('/api/v1/announcements');
+export function listAnnouncements(
+  groupId: number,
+  limit?: number,
+): Promise<{ data: AnnouncementRecord[]; meta: ListMeta | null }> {
+  const params = new URLSearchParams({ group_id: String(groupId) });
+  if (limit) params.set('limit', String(limit));
+  return requestEnvelopedWithMeta<AnnouncementRecord[]>(`/api/v1/announcements?${params}`);
 }
 
-export function createAnnouncement(title: string, content: string): Promise<AnnouncementRecord> {
+export function createAnnouncement(
+  groupId: number,
+  title: string,
+  content: string,
+): Promise<AnnouncementRecord> {
   return requestEnveloped('/api/v1/announcements', {
     method: 'POST',
-    body: JSON.stringify({ title, content }),
+    body: JSON.stringify({ group_id: groupId, title, content }),
   });
 }
 
