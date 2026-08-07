@@ -7,9 +7,9 @@ import {
   listGroupMembers,
   listRoomMembers,
   removeRoomMember,
-  type AuthUser,
   type ChatRoomMember,
   type ChatRoomRecord,
+  type GroupMember,
 } from '@/lib/api';
 
 type RoomMembersProps = {
@@ -23,7 +23,7 @@ type RoomMembersProps = {
 export function RoomMembers({ room, onCountChange, onLeft }: RoomMembersProps) {
   const { user } = useAuth();
   const [members, setMembers] = useState<ChatRoomMember[]>([]);
-  const [groupMembers, setGroupMembers] = useState<AuthUser[]>([]);
+  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
@@ -53,7 +53,7 @@ export function RoomMembers({ room, onCountChange, onLeft }: RoomMembersProps) {
   const memberIds = new Set(members.map((m) => m.id));
   const invitable = groupMembers.filter((g) => !memberIds.has(g.id));
 
-  const handleInvite = async (target: AuthUser) => {
+  const handleInvite = async (target: GroupMember) => {
     setBusyId(target.id);
     setErrorMsg('');
     try {

@@ -7,6 +7,7 @@ export type AuthUser = {
   id: number;
   email: string;
   name: string;
+  created_at: string;
 };
 
 export type GroupSummary = {

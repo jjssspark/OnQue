@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
+import { useWorkspace } from '@/components/WorkspaceContext';
 import { createAnnouncement, listAnnouncements, type AnnouncementRecord } from '@/lib/api';
 
 function formatDateTime(iso: string): string {
@@ -9,8 +10,9 @@ function formatDateTime(iso: string): string {
 }
 
 export default function AnnouncementsPage() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const { groups } = useAuth();
+  const { currentGroupId } = useWorkspace();
+  const isAdmin = groups.find((g) => g.id === currentGroupId)?.role === 'admin';
 
   const [items, setItems] = useState<AnnouncementRecord[]>([]);
   const [title, setTitle] = useState('');
@@ -20,20 +22,26 @@ export default function AnnouncementsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    listAnnouncements()
-      .then(setItems)
+    if (currentGroupId === null) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    listAnnouncements(currentGroupId)
+      .then(({ data }) => setItems(data))
       .catch(() => setError('공지를 불러오지 못했습니다.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [currentGroupId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim() || !content.trim() || busy) return;
+    if (!title.trim() || !content.trim() || busy || currentGroupId === null) return;
 
     setBusy(true);
     setError(null);
     try {
-      const created = await createAnnouncement(title.trim(), content.trim());
+      const created = await createAnnouncement(currentGroupId, title.trim(), content.trim());
       setItems((prev) => [created, ...prev]);
       setTitle('');
       setContent('');
@@ -44,12 +52,20 @@ export default function AnnouncementsPage() {
     }
   }
 
+  if (currentGroupId === null) {
+    return (
+      <div className="mx-auto max-w-2xl px-6 py-10 text-sm text-foreground/60">
+        아직 소속된 그룹이 없습니다. 관리자가 그룹에 초대하면 이용할 수 있습니다.
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
       <p className="font-mono text-xs uppercase tracking-widest text-brand">Announcements</p>
-      <h1 className="mt-1 text-2xl font-bold text-foreground">전사 공지사항</h1>
+      <h1 className="mt-1 text-2xl font-bold text-foreground">팀 공지사항</h1>
       <p className="mt-2 text-sm text-foreground/60">
-        그룹과 관계없이 회사 전체가 함께 보는 공지입니다. 등록은 관리자만 할 수 있습니다.
+        지금 선택된 그룹의 팀원이 함께 보는 공지입니다. 등록은 관리자만 할 수 있습니다.
       </p>
 
       {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
