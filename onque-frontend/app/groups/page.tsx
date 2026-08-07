@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
+import { ReceivedInvitations } from '@/components/ReceivedInvitations';
 import {
   cancelGroupInvitation,
   createGroup,
@@ -78,13 +79,9 @@ export default function GroupsPage() {
     setError(null);
     setNotice(null);
     try {
-      const result = await inviteToGroupByEmail(selectedGroupId, email);
+      await inviteToGroupByEmail(selectedGroupId, email);
       setInviteEmail('');
-      setNotice(
-        result.status === 'joined'
-          ? `${result.user.name} 님을 그룹에 바로 추가했습니다.`
-          : `${result.email} 님을 초대했습니다. 이 이메일로 가입하면 자동으로 합류합니다.`,
-      );
+      setNotice('초대했습니다. 상대가 수락하면 팀에 합류합니다.');
       await loadMembers(selectedGroupId);
     } catch (err) {
       setError(err instanceof Error ? err.message : '초대에 실패했습니다.');
@@ -126,6 +123,7 @@ export default function GroupsPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
+      <ReceivedInvitations onChanged={refreshMe} />
       <p className="font-mono text-xs uppercase tracking-widest text-brand">Groups</p>
       <h1 className="mt-1 text-2xl font-bold text-foreground">그룹 관리</h1>
       <p className="mt-2 text-sm text-foreground/60">
@@ -234,8 +232,8 @@ export default function GroupsPage() {
               <section className="rounded-xl border border-border bg-surface p-5 shadow-sm">
                 <h2 className="text-sm font-bold text-foreground">이메일로 초대</h2>
                 <p className="mt-1 text-xs leading-relaxed text-foreground/45">
-                  아직 가입 전이어도 초대해 둘 수 있습니다. 그 이메일로 가입하는 순간 이 그룹에
-                  자동으로 합류합니다.
+                  아직 가입 전이어도 초대해 둘 수 있습니다. 상대가 초대를 수락해야 이 그룹에
+                  합류합니다.
                 </p>
                 <form onSubmit={handleInviteByEmail} className="mt-3 flex gap-2">
                   <input

@@ -127,10 +127,17 @@ export type GroupInvitation = {
   accepted_at: string | null;
 };
 
-/** 이미 가입한 사람은 바로 합류하고, 아니면 대기 초대로 남는다. */
-export type InviteResult =
-  | { status: 'joined'; email: string; user: { id: number; email: string; name: string } }
-  | { status: 'pending'; email: string; invitation: GroupInvitation };
+/** 가입 여부와 무관하게 항상 이 형태로 응답한다 — 응답 차이로 가입 여부를 열거하지 못하게 하기 위함. */
+export type InviteResult = { status: 'invited'; email: string };
+
+/** 로그인한 사용자가 받은, 아직 응답하지 않은 그룹 초대. */
+export type ReceivedInvitation = {
+  id: number;
+  group_id: number;
+  group_name: string;
+  invited_by_name: string;
+  created_at: string;
+};
 
 export type Client = {
   id: number;
@@ -397,6 +404,22 @@ export function listGroupInvitations(groupId: number): Promise<GroupInvitation[]
 
 export function cancelGroupInvitation(groupId: number, invitationId: number): Promise<unknown> {
   return requestEnveloped(`/api/v1/groups/${groupId}/invitations/${invitationId}`, {
+    method: 'DELETE',
+  });
+}
+
+export function listMyInvitations(): Promise<ReceivedInvitation[]> {
+  return requestEnveloped('/api/v1/me/invitations');
+}
+
+export function acceptInvitation(invitationId: number): Promise<{ group_id: number }> {
+  return requestEnveloped(`/api/v1/me/invitations/${invitationId}/accept`, {
+    method: 'POST',
+  });
+}
+
+export function declineInvitation(invitationId: number): Promise<{ declined: boolean }> {
+  return requestEnveloped(`/api/v1/me/invitations/${invitationId}`, {
     method: 'DELETE',
   });
 }

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
+import { ReceivedInvitations } from '@/components/ReceivedInvitations';
 import { changeMyPassword, updateMyName } from '@/lib/api';
 
 function formatDate(iso: string): string {
@@ -157,6 +158,8 @@ export default function ProfilePage() {
             </button>
           </form>
         </section>
+
+        <ReceivedInvitations onChanged={refreshMe} />
 
         <section className="rounded-xl border border-border bg-surface p-5 shadow-sm">
           <h2 className="text-sm font-bold text-foreground">소속 팀</h2>
