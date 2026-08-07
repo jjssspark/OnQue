@@ -62,9 +62,16 @@ def test_todo_patch_rejects_cross_group_access(client, db_session):
     ).json()["data"]
     member_token = member_signup["token"]
     client.post(
-        f"/api/v1/groups/{group_a}/members",
-        json={"user_id": member_signup["user"]["id"]},
+        f"/api/v1/groups/{group_a}/invitations",
+        json={"email": "a-member@onque.dev"},
         headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    inv_id = client.get(
+        "/api/v1/me/invitations", headers={"Authorization": f"Bearer {member_token}"}
+    ).json()["data"][0]["id"]
+    client.post(
+        f"/api/v1/me/invitations/{inv_id}/accept",
+        headers={"Authorization": f"Bearer {member_token}"},
     )
 
     res = client.patch(

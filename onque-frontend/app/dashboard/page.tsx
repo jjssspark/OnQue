@@ -7,6 +7,7 @@ import { useWorkspace } from '@/components/WorkspaceContext';
 import { MetricStrip, type Metric } from '@/components/MetricStrip';
 import CommitmentPanel from '@/components/CommitmentPanel';
 import ClientPanel from '@/components/ClientPanel';
+import { ReceivedInvitations } from '@/components/ReceivedInvitations';
 import { getDocuments, type DocumentRecord } from '@/lib/api';
 
 const MODULES = [
@@ -37,7 +38,7 @@ function dueLabel(dueDate: string, todayKey: string): { text: string; alert: boo
 }
 
 export default function DashboardPage() {
-  const { user, groups } = useAuth();
+  const { user, groups, refreshMe } = useAuth();
   const { todos, schedules, currentGroupId, toggleTodo, error: workspaceError } = useWorkspace();
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [documentsError, setDocumentsError] = useState<string | null>(null);
@@ -112,8 +113,11 @@ export default function DashboardPage() {
 
   if (currentGroupId === null) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-10 text-sm text-foreground/60">
-        아직 소속된 그룹이 없습니다. 관리자가 그룹에 초대하면 이용할 수 있습니다.
+      <div className="mx-auto max-w-2xl px-6 py-10">
+        <ReceivedInvitations onChanged={refreshMe} />
+        <p className="text-sm text-foreground/60">
+          아직 소속된 팀이 없습니다. 받은 초대를 수락하거나 팀 관리에서 팀을 만들어 보세요.
+        </p>
       </div>
     );
   }

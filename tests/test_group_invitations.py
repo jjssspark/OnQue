@@ -125,11 +125,11 @@ def test_inviting_an_existing_group_member_is_rejected(client):
 def test_non_admin_cannot_invite(client):
     admin, group_id = _setup(client)
     member = _signup(client, "member@onque.dev", "직원")
-    client.post(
-        f"/api/v1/groups/{group_id}/members",
-        json={"user_id": member["user"]["id"]},
-        headers=_auth(admin["token"]),
-    )
+    _invite(client, admin["token"], group_id, "member@onque.dev")
+    inv_id = client.get(
+        "/api/v1/me/invitations", headers=_auth(member["token"])
+    ).json()["data"][0]["id"]
+    client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=_auth(member["token"]))
 
     res = _invite(client, member["token"], group_id, "newbie@onque.dev")
 

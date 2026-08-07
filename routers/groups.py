@@ -78,10 +78,6 @@ class GroupInviteBody(BaseModel):
     email: EmailStr
 
 
-class GroupMemberBody(BaseModel):
-    user_id: int
-
-
 @router.post("/groups")
 def create_group(
     body: GroupCreateBody,
@@ -147,27 +143,6 @@ def list_group_members(
     }
 
 
-@router.post("/groups/{group_id}/members")
-def add_group_member(
-    group_id: int,
-    body: GroupMemberBody,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    require_group_admin(
-        current_user, group_id, db,
-        code="GROUP_MEMBER_ADD_FORBIDDEN", message="관리자만 가능한 작업입니다.",
-    )
-    target_user = db.get(User, body.user_id)
-    if not target_user:
-        raise HTTPException(
-            status_code=404, detail={"code": "USER_NOT_FOUND", "message": "사용자를 찾을 수 없습니다."}
-        )
-    join_group(db, body.user_id, group_id)
-    db.commit()
-    return {"success": True, "data": {"group_id": group_id, "user_id": body.user_id}, "error": None}
-
-
 def _serialize_invitation(inv: GroupInvitation) -> dict:
     return {
         "id": inv.id,
@@ -215,8 +190,14 @@ def invite_to_group_by_email(
 
     # 이미 우리 팀 멤버인지 확인한다. 관리자가 GET /groups/{id}/members로
     # 이미 볼 수 있는 정보라 이 409는 새로 새는 것이 없다.
+    # 조회를 항상 실행해야 한다 — user 존재 여부에 따라 쿼리 횟수가 갈리면
+    # 응답 시간차로 임의 이메일의 가입 여부를 알아낼 수 있다. user_id=0인
+    # 멤버십은 존재할 수 없으므로 미가입 경로에서도 같은 쿼리가 한 번 돈다.
     user = db.scalar(select(User).where(func.lower(User.email) == email))
-    if user and db.get(GroupMembership, {"user_id": user.id, "group_id": group_id}):
+    membership = db.get(
+        GroupMembership, {"user_id": user.id if user else 0, "group_id": group_id}
+    )
+    if user and membership:
         raise HTTPException(
             status_code=409,
             detail={

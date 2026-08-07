@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from auth import create_access_token, get_current_user, hash_password, verify_password
@@ -147,9 +148,19 @@ def _pending_invitation_for(db: Session, user: User, invitation_id: int) -> Grou
 
 @router.get("/me/invitations")
 def list_my_invitations(
+    limit: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """(group_id, email) 유니크 제약은 한 그룹당 1행만 막는다. 그룹을 여러 개
+    만들어 같은 사람을 반복 초대하면 행이 무한히 쌓일 수 있으므로 상한을 둔다."""
+    base_filter = (
+        func.lower(GroupInvitation.email) == current_user.email.lower(),
+        GroupInvitation.accepted_at.is_(None),
+    )
+    total = db.scalar(
+        select(func.count()).select_from(GroupInvitation).where(*base_filter)
+    )
     rows = db.execute(
         select(
             GroupInvitation.id,
@@ -160,26 +171,26 @@ def list_my_invitations(
         )
         .join(Group, Group.id == GroupInvitation.group_id)
         .join(User, User.id == GroupInvitation.invited_by)
-        .where(
-            func.lower(GroupInvitation.email) == current_user.email.lower(),
-            GroupInvitation.accepted_at.is_(None),
-        )
+        .where(*base_filter)
         .order_by(GroupInvitation.created_at.desc())
+        .limit(limit)
     ).all()
 
+    items = [
+        {
+            "id": inv_id,
+            "group_id": group_id,
+            "group_name": group_name,
+            "invited_by_name": inviter_name,
+            "created_at": created_at.isoformat(),
+        }
+        for inv_id, group_id, group_name, inviter_name, created_at in rows
+    ]
     return {
         "success": True,
-        "data": [
-            {
-                "id": inv_id,
-                "group_id": group_id,
-                "group_name": group_name,
-                "invited_by_name": inviter_name,
-                "created_at": created_at.isoformat(),
-            }
-            for inv_id, group_id, group_name, inviter_name, created_at in rows
-        ],
+        "data": items,
         "error": None,
+        "meta": {"total": total, "limit": limit, "hasNext": total > len(items)},
     }
 
 
@@ -190,10 +201,17 @@ def accept_my_invitation(
     db: Session = Depends(get_db),
 ):
     inv = _pending_invitation_for(db, current_user, invitation_id)
-    join_group(db, current_user.id, inv.group_id)
+    group_id = inv.group_id
+    join_group(db, current_user.id, group_id)
     inv.accepted_at = datetime.now(timezone.utc)
-    db.commit()
-    return {"success": True, "data": {"group_id": inv.group_id}, "error": None}
+    try:
+        db.commit()
+    except IntegrityError:
+        # 같은 초대를 두 탭에서 동시에 수락하면 둘 다 멤버십 부재를 확인한 뒤
+        # 멤버십 PK에 중복 INSERT를 시도한다. 결과적으로 사용자는 이미 그 팀의
+        # 멤버이므로, 이 경우도 사용자 관점에서는 성공이다 — 멱등 처리한다.
+        db.rollback()
+    return {"success": True, "data": {"group_id": group_id}, "error": None}
 
 
 @router.delete("/me/invitations/{invitation_id}")

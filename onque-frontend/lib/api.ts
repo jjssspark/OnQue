@@ -378,13 +378,6 @@ export function listGroupMembers(groupId: number): Promise<GroupMember[]> {
   return requestEnveloped(`/api/v1/groups/${groupId}/members`);
 }
 
-export function addGroupMember(groupId: number, userId: number): Promise<unknown> {
-  return requestEnveloped(`/api/v1/groups/${groupId}/members`, {
-    method: 'POST',
-    body: JSON.stringify({ user_id: userId }),
-  });
-}
-
 export function removeGroupMember(groupId: number, userId: number): Promise<unknown> {
   return requestEnveloped(`/api/v1/groups/${groupId}/members/${userId}`, {
     method: 'DELETE',

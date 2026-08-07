@@ -291,3 +291,69 @@ def test_invitation_email_matching_ignores_case(client, db_session):
     _make_pending_invitation(db_session, gid, "inv7-guest@t.dev", owner_id)
 
     assert len(client.get("/api/v1/me/invitations", headers=guest).json()["data"]) == 1
+
+
+def test_invitation_endpoints_require_auth(client):
+    """토큰 없이 부르면 401이고, 봉투 형식(success: false, error.code)을 지켜야 한다."""
+    for res in (
+        client.get("/api/v1/me/invitations"),
+        client.post("/api/v1/me/invitations/1/accept"),
+        client.delete("/api/v1/me/invitations/1"),
+    ):
+        assert res.status_code == 401
+        body = res.json()
+        assert body["success"] is False
+        assert body["error"]["code"]
+
+
+def test_accepting_a_declined_invitation_is_not_found(client, db_session):
+    """거절한 초대는 행이 삭제되므로 같은 id로 다시 수락하면 404다."""
+    owner = _signup(client, "inv8-own@t.dev", "주인")
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
+    owner_id = client.get("/api/v1/me", headers=owner).json()["data"]["user"]["id"]
+
+    guest = _signup(client, "inv8-guest@t.dev", "손님")
+    inv_id = _make_pending_invitation(db_session, gid, "inv8-guest@t.dev", owner_id)
+
+    assert client.delete(f"/api/v1/me/invitations/{inv_id}", headers=guest).status_code == 200
+
+    res = client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=guest)
+    assert res.status_code == 404
+    assert res.json()["error"]["code"] == "INVITATION_NOT_FOUND"
+
+
+def test_accepting_with_different_email_case_succeeds(client, db_session):
+    """초대 이메일과 가입 이메일의 대소문자가 달라도 소유권 검사가 통과해야 한다."""
+    owner = _signup(client, "inv9-own@t.dev", "주인")
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
+    owner_id = client.get("/api/v1/me", headers=owner).json()["data"]["user"]["id"]
+
+    guest = _signup(client, "inv9-Guest@t.dev", "손님")
+    inv_id = _make_pending_invitation(db_session, gid, "inv9-guest@t.dev", owner_id)
+
+    res = client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=guest)
+    assert res.status_code == 200
+
+    groups = client.get("/api/v1/me", headers=guest).json()["data"]["groups"]
+    assert [g["id"] for g in groups] == [gid]
+
+
+def test_accepting_invitation_when_already_a_member_is_idempotent(client, db_session):
+    """다른 경로로 이미 그 그룹 멤버인 상태에서 대기 초대를 수락해도 500이 아니라
+    정상 처리돼야 한다 — join_group은 멱등하다."""
+    from models import GroupMembership
+
+    owner = _signup(client, "inv10-own@t.dev", "주인")
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
+    owner_id = client.get("/api/v1/me", headers=owner).json()["data"]["user"]["id"]
+
+    guest = _signup(client, "inv10-guest@t.dev", "손님")
+    guest_id = client.get("/api/v1/me", headers=guest).json()["data"]["user"]["id"]
+    inv_id = _make_pending_invitation(db_session, gid, "inv10-guest@t.dev", owner_id)
+
+    db_session.add(GroupMembership(user_id=guest_id, group_id=gid, role="member"))
+    db_session.commit()
+
+    res = client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=guest)
+    assert res.status_code == 200
+    assert res.json()["data"]["group_id"] == gid

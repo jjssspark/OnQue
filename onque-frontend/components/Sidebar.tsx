@@ -127,7 +127,7 @@ export function Sidebar() {
             ))}
           </select>
         ) : (
-          <p className="text-xs text-white/50">아직 소속된 그룹이 없습니다. 관리자의 초대를 기다려주세요.</p>
+          <p className="text-xs text-white/50">받은 초대를 확인해 보세요.</p>
         )}
       </div>
 

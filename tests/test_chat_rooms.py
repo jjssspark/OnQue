@@ -144,8 +144,11 @@ def test_delete_room_forbidden_for_other_member(client):
 
     member = _signup(client, "member@onque.dev", "직원")
     client.post(
-        f"/api/v1/groups/{group_id}/members", json={"user_id": member["user"]["id"]}, headers=auth
+        f"/api/v1/groups/{group_id}/invitations", json={"email": "member@onque.dev"}, headers=auth
     )
+    member_auth = {"Authorization": f"Bearer {member['token']}"}
+    inv_id = client.get("/api/v1/me/invitations", headers=member_auth).json()["data"][0]["id"]
+    client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=member_auth)
     # 방에 초대까지 해야 "방 멤버지만 방장은 아닌 사람"의 삭제 시도를 검증할 수 있다.
     client.post(
         f"/chat/rooms/{room['id']}/members", json={"user_id": member["user"]["id"]}, headers=auth

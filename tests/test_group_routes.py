@@ -80,76 +80,9 @@ def test_admin_can_create_group(client):
     assert res.json()["data"]["name"] == "행사기획팀"
 
 
-def test_admin_can_add_member_to_group(client):
-    admin_token, _ = _signup(client, "admin@onque.dev")
-    _, member_id = _signup(client, "member@onque.dev")
-    group = client.post(
-        "/api/v1/groups",
-        json={"name": "행사기획팀"},
-        headers={"Authorization": f"Bearer {admin_token}"},
-    ).json()["data"]
-
-    res = client.post(
-        f"/api/v1/groups/{group['id']}/members",
-        json={"user_id": member_id},
-        headers={"Authorization": f"Bearer {admin_token}"},
-    )
-    assert res.status_code == 200
-
-    me = client.get("/api/v1/me", headers={"Authorization": f"Bearer {admin_token}"})
-
-
-def test_member_cannot_add_member(client):
-    admin_token, _ = _signup(client, "admin@onque.dev")
-    _, member_id = _signup(client, "member@onque.dev")
-    other_token, other_id = _signup(client, "other@onque.dev")
-    group = client.post(
-        "/api/v1/groups",
-        json={"name": "행사기획팀"},
-        headers={"Authorization": f"Bearer {admin_token}"},
-    ).json()["data"]
-    # "other"가 이 그룹의 일반 멤버여야 "멤버는 못 한다"를 실제로 검증한다.
-    # 그룹에 속하지 않은 사람은 require_group_admin에서 더 앞서 GROUP_ACCESS_FORBIDDEN으로
-    # 걸러지므로, 이 테스트의 의도(관리자가 아닌 멤버의 거부)를 재현하지 못했었다.
-    client.post(
-        f"/api/v1/groups/{group['id']}/members",
-        json={"user_id": other_id},
-        headers={"Authorization": f"Bearer {admin_token}"},
-    )
-
-    res = client.post(
-        f"/api/v1/groups/{group['id']}/members",
-        json={"user_id": member_id},
-        headers={"Authorization": f"Bearer {other_token}"},
-    )
-    assert res.status_code == 403
-    assert res.json()["error"]["code"] == "GROUP_MEMBER_ADD_FORBIDDEN"
-
-
-def test_outsider_cannot_add_member(client):
-    """이 그룹에 아예 속하지 않은 사람은 require_group_admin의 멤버십
-    검사에서 먼저 걸러져 일반 GROUP_ACCESS_FORBIDDEN을 받는다."""
-    admin_token, _ = _signup(client, "admin@onque.dev")
-    _, member_id = _signup(client, "member@onque.dev")
-    outsider_token, _ = _signup(client, "outsider@onque.dev")
-    group = client.post(
-        "/api/v1/groups",
-        json={"name": "행사기획팀"},
-        headers={"Authorization": f"Bearer {admin_token}"},
-    ).json()["data"]
-
-    res = client.post(
-        f"/api/v1/groups/{group['id']}/members",
-        json={"user_id": member_id},
-        headers={"Authorization": f"Bearer {outsider_token}"},
-    )
-    assert res.status_code == 403
-    assert res.json()["error"]["code"] == "GROUP_ACCESS_FORBIDDEN"
-
-
 def test_get_groups_returns_only_my_groups(client):
     admin_token, admin_id = _signup(client, "admin@onque.dev")
-    _, member_id = _signup(client, "member@onque.dev")
+    member_token, member_id = _signup(client, "member@onque.dev")
     group_a = client.post(
         "/api/v1/groups", json={"name": "A팀"}, headers={"Authorization": f"Bearer {admin_token}"}
     ).json()["data"]
@@ -157,32 +90,47 @@ def test_get_groups_returns_only_my_groups(client):
         "/api/v1/groups", json={"name": "B팀"}, headers={"Authorization": f"Bearer {admin_token}"}
     )
     client.post(
-        f"/api/v1/groups/{group_a['id']}/members",
-        json={"user_id": member_id},
+        f"/api/v1/groups/{group_a['id']}/invitations",
+        json={"email": "member@onque.dev"},
         headers={"Authorization": f"Bearer {admin_token}"},
     )
+    inv_id = client.get(
+        "/api/v1/me/invitations", headers={"Authorization": f"Bearer {member_token}"}
+    ).json()["data"][0]["id"]
+    client.post(
+        f"/api/v1/me/invitations/{inv_id}/accept",
+        headers={"Authorization": f"Bearer {member_token}"},
+    )
 
-    member_token = client.post(
-        "/api/v1/auth/login", json={"email": "member@onque.dev", "password": "password123"}
-    ).json()["data"]["token"]
     res = client.get("/api/v1/groups", headers={"Authorization": f"Bearer {member_token}"})
     names = [g["name"] for g in res.json()["data"]]
     assert names == ["A팀"]
 
 
+def _invite_and_accept(client, admin_token, group_id, email, member_token):
+    client.post(
+        f"/api/v1/groups/{group_id}/invitations",
+        json={"email": email},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    inv_id = client.get(
+        "/api/v1/me/invitations", headers={"Authorization": f"Bearer {member_token}"}
+    ).json()["data"][0]["id"]
+    client.post(
+        f"/api/v1/me/invitations/{inv_id}/accept",
+        headers={"Authorization": f"Bearer {member_token}"},
+    )
+
+
 def test_admin_can_remove_member_from_group(client):
     admin_token, _ = _signup(client, "admin@onque.dev")
-    _, member_id = _signup(client, "member@onque.dev")
+    member_token, member_id = _signup(client, "member@onque.dev")
     group = client.post(
         "/api/v1/groups",
         json={"name": "행사기획팀"},
         headers={"Authorization": f"Bearer {admin_token}"},
     ).json()["data"]
-    client.post(
-        f"/api/v1/groups/{group['id']}/members",
-        json={"user_id": member_id},
-        headers={"Authorization": f"Bearer {admin_token}"},
-    )
+    _invite_and_accept(client, admin_token, group["id"], "member@onque.dev", member_token)
 
     res = client.delete(
         f"/api/v1/groups/{group['id']}/members/{member_id}",
@@ -190,9 +138,6 @@ def test_admin_can_remove_member_from_group(client):
     )
     assert res.status_code == 200
 
-    member_token = client.post(
-        "/api/v1/auth/login", json={"email": "member@onque.dev", "password": "password123"}
-    ).json()["data"]["token"]
     res = client.get("/api/v1/groups", headers={"Authorization": f"Bearer {member_token}"})
     names = [g["name"] for g in res.json()["data"]]
     assert names == []
@@ -200,26 +145,18 @@ def test_admin_can_remove_member_from_group(client):
 
 def test_member_cannot_remove_member(client):
     admin_token, _ = _signup(client, "admin@onque.dev")
-    _, member_id = _signup(client, "member@onque.dev")
+    member_token, member_id = _signup(client, "member@onque.dev")
     other_token, other_id = _signup(client, "other@onque.dev")
     group = client.post(
         "/api/v1/groups",
         json={"name": "행사기획팀"},
         headers={"Authorization": f"Bearer {admin_token}"},
     ).json()["data"]
-    client.post(
-        f"/api/v1/groups/{group['id']}/members",
-        json={"user_id": member_id},
-        headers={"Authorization": f"Bearer {admin_token}"},
-    )
     # "other"가 이 그룹의 일반 멤버여야 "멤버는 못 한다"를 실제로 검증한다.
     # 그룹에 속하지 않은 사람은 require_group_admin에서 더 앞서 GROUP_ACCESS_FORBIDDEN으로
     # 걸러지므로, 이 테스트의 의도(관리자가 아닌 멤버의 거부)를 재현하지 못했었다.
-    client.post(
-        f"/api/v1/groups/{group['id']}/members",
-        json={"user_id": other_id},
-        headers={"Authorization": f"Bearer {admin_token}"},
-    )
+    _invite_and_accept(client, admin_token, group["id"], "member@onque.dev", member_token)
+    _invite_and_accept(client, admin_token, group["id"], "other@onque.dev", other_token)
 
     res = client.delete(
         f"/api/v1/groups/{group['id']}/members/{member_id}",
@@ -233,18 +170,14 @@ def test_outsider_cannot_remove_member(client):
     """이 그룹에 아예 속하지 않은 사람은 require_group_admin의 멤버십
     검사에서 먼저 걸러져 일반 GROUP_ACCESS_FORBIDDEN을 받는다."""
     admin_token, _ = _signup(client, "admin@onque.dev")
-    _, member_id = _signup(client, "member@onque.dev")
+    member_token, member_id = _signup(client, "member@onque.dev")
     outsider_token, _ = _signup(client, "outsider@onque.dev")
     group = client.post(
         "/api/v1/groups",
         json={"name": "행사기획팀"},
         headers={"Authorization": f"Bearer {admin_token}"},
     ).json()["data"]
-    client.post(
-        f"/api/v1/groups/{group['id']}/members",
-        json={"user_id": member_id},
-        headers={"Authorization": f"Bearer {admin_token}"},
-    )
+    _invite_and_accept(client, admin_token, group["id"], "member@onque.dev", member_token)
 
     res = client.delete(
         f"/api/v1/groups/{group['id']}/members/{member_id}",
