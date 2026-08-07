@@ -578,14 +578,20 @@ def _serialize_room_member(user: User, room: ChatRoom) -> dict:
     }
 
 
-def _require_room_access(user: User, room_id: int, db: Session) -> ChatRoom:
-    """방을 찾고 그룹 멤버십과 방 초대 여부까지 확인한 뒤 방을 돌려준다."""
+def _get_room_or_404(room_id: int, db: Session) -> ChatRoom:
+    """방을 찾으면 돌려주고, 없으면 404를 던진다."""
     room = db.get(ChatRoom, room_id)
     if not room:
         raise HTTPException(
             status_code=404,
             detail={"code": "CHAT_ROOM_NOT_FOUND", "message": "채팅방을 찾을 수 없습니다."},
         )
+    return room
+
+
+def _require_room_access(user: User, room_id: int, db: Session) -> ChatRoom:
+    """방을 찾고 그룹 멤버십과 방 초대 여부까지 확인한 뒤 방을 돌려준다."""
+    room = _get_room_or_404(room_id, db)
     # 그룹을 먼저 본다. 그룹 밖 사람에게 "초대되지 않았다"고 알려주면 방의 존재가 새어나간다.
     require_group_member(user, room.group_id, db)
     if not db.get(ChatRoomMember, {"room_id": room.id, "user_id": user.id}):
@@ -665,13 +671,7 @@ def delete_chat_room(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    room = db.get(ChatRoom, room_id)
-    if not room:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "CHAT_ROOM_NOT_FOUND", "message": "채팅방을 찾을 수 없습니다."},
-        )
-
+    room = _get_room_or_404(room_id, db)
     # 생성자는 방에 속할 것으로 가정하고 full access check 수행
     if room.created_by == current_user.id:
         _require_room_access(current_user, room_id, db)
@@ -779,12 +779,7 @@ def remove_room_member(
     db: Session = Depends(get_db),
 ):
     """나가기는 누구나, 내보내기는 방을 만든 사람이나 관리자만."""
-    room = db.get(ChatRoom, room_id)
-    if not room:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "CHAT_ROOM_NOT_FOUND", "message": "채팅방을 찾을 수 없습니다."},
-        )
+    room = _get_room_or_404(room_id, db)
 
     # 본인 또는 생성자가 접근하는 경우, 방에 속해있는지 확인
     if user_id == current_user.id or room.created_by == current_user.id:
