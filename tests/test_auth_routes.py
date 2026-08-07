@@ -116,3 +116,69 @@ def test_me_returns_current_user_and_groups(client):
     assert res.status_code == 200
     assert res.json()["data"]["user"]["email"] == "me@onque.dev"
     assert [g["name"] for g in res.json()["data"]["groups"]] == ["내 그룹"]
+
+
+def _signup(client, email, name):
+    res = client.post(
+        "/api/v1/auth/signup",
+        json={"email": email, "password": "password123", "name": name},
+    )
+    assert res.status_code == 200
+    return {"Authorization": f"Bearer {res.json()['data']['token']}"}
+
+
+def test_me_reports_role_per_group(client):
+    a = _signup(client, "p1@t.dev", "A")
+    b = _signup(client, "p2@t.dev", "B")
+    gid_b = client.post("/api/v1/groups", json={"name": "B팀"}, headers=b).json()["data"]["id"]
+    # p1은 이미 가입돼 있으므로 초대 즉시 합류한다
+    client.post(f"/api/v1/groups/{gid_b}/invitations", json={"email": "p1@t.dev"}, headers=b)
+    gid_a = client.post("/api/v1/groups", json={"name": "A팀"}, headers=a).json()["data"]["id"]
+
+    groups = client.get("/api/v1/me", headers=a).json()["data"]["groups"]
+    assert {g["id"]: g["role"] for g in groups} == {gid_a: "admin", gid_b: "member"}
+
+
+def test_me_includes_created_at(client):
+    headers = _signup(client, "p3@t.dev", "C")
+    assert "created_at" in client.get("/api/v1/me", headers=headers).json()["data"]["user"]
+
+
+def test_can_change_my_name(client):
+    headers = _signup(client, "p4@t.dev", "옛이름")
+    assert client.patch("/api/v1/me", json={"name": "새이름"}, headers=headers).status_code == 200
+    assert client.get("/api/v1/me", headers=headers).json()["data"]["user"]["name"] == "새이름"
+
+
+def test_password_change_requires_the_current_password(client):
+    """현재 비밀번호를 확인하지 않으면 탈취된 토큰이 곧 계정 탈취다."""
+    headers = _signup(client, "p5@t.dev", "D")
+    res = client.post(
+        "/api/v1/me/password",
+        json={"current_password": "wrongpassword", "new_password": "newpassword123"},
+        headers=headers,
+    )
+    assert res.status_code == 400
+    assert res.json()["error"]["code"] == "USER_PASSWORD_INVALID"
+
+
+def test_password_change_succeeds_and_old_password_stops_working(client):
+    headers = _signup(client, "p6@t.dev", "E")
+    assert client.post(
+        "/api/v1/me/password",
+        json={"current_password": "password123", "new_password": "newpassword123"},
+        headers=headers,
+    ).status_code == 200
+
+    assert client.post(
+        "/api/v1/auth/login", json={"email": "p6@t.dev", "password": "password123"}
+    ).status_code == 401
+    assert client.post(
+        "/api/v1/auth/login", json={"email": "p6@t.dev", "password": "newpassword123"}
+    ).status_code == 200
+
+
+def test_global_user_list_endpoint_is_gone(client):
+    """다른 조직 사용자의 이메일이 새어나가는 구멍이었고 쓰는 화면도 없었다."""
+    headers = _signup(client, "p7@t.dev", "F")
+    assert client.get("/api/v1/users", headers=headers).status_code == 404

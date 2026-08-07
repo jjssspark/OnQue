@@ -24,6 +24,15 @@ class LoginBody(BaseModel):
     password: str
 
 
+class ProfileUpdateBody(BaseModel):
+    name: str = Field(min_length=1)
+
+
+class PasswordChangeBody(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
 def _serialize_user(user: User) -> dict:
     return {"id": user.id, "email": user.email, "name": user.name}
 
@@ -90,8 +99,41 @@ def get_me(current_user: User = Depends(get_current_user), db: Session = Depends
     return {
         "success": True,
         "data": {
-            "user": _serialize_user(current_user),
+            "user": {
+                **_serialize_user(current_user),
+                "created_at": current_user.created_at.isoformat(),
+            },
             "groups": get_user_groups_with_role(current_user.id, db),
         },
         "error": None,
     }
+
+
+@router.patch("/me")
+def update_me(
+    body: ProfileUpdateBody,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    current_user.name = body.name
+    db.commit()
+    db.refresh(current_user)
+    return {"success": True, "data": _serialize_user(current_user), "error": None}
+
+
+@router.post("/me/password")
+def change_my_password(
+    body: PasswordChangeBody,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """현재 비밀번호를 반드시 확인한다. 토큰만으로 바꿀 수 있으면
+    탈취된 토큰이 그대로 계정 탈취가 된다."""
+    if not verify_password(body.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "USER_PASSWORD_INVALID", "message": "현재 비밀번호가 올바르지 않습니다."},
+        )
+    current_user.password_hash = hash_password(body.new_password)
+    db.commit()
+    return {"success": True, "data": {"changed": True}, "error": None}
