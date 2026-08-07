@@ -74,6 +74,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setSchedules([]);
       setProposedCount(0);
       setDueSoon([]);
+      setError(null);
+      setLastSyncedAt(null);
       setLoading(false);
       return;
     }
