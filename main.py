@@ -14,10 +14,10 @@ import gemini_service
 from db import Base, engine, get_db
 from routers.auth import router as auth_router
 from routers.groups import router as groups_router
-from routers.users import router as users_router
 from routers.announcements import router as announcements_router
 from routers.commitments import router as commitments_router
 from auth import get_current_user
+from permissions import require_group_admin, require_group_member
 from models import (
     ChatMessage,
     ChatRoom,
@@ -62,7 +62,6 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(groups_router)
 app.include_router(announcements_router)
-app.include_router(users_router)
 app.include_router(commitments_router)
 
 
@@ -85,15 +84,6 @@ def _hint_matches(text: str, hint: str) -> bool:
     if not a or not b:
         return False
     return a in b or b in a
-
-
-def _require_group_member(user: User, group_id: int, db: Session) -> None:
-    membership = db.get(GroupMembership, {"user_id": user.id, "group_id": group_id})
-    if not membership:
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "GROUP_ACCESS_FORBIDDEN", "message": "해당 그룹에 소속되어 있지 않습니다."},
-        )
 
 
 # ── 통화/문서 요약 ──────────────────────────────────────────
@@ -192,7 +182,7 @@ async def summarize_call(
     db: Session = Depends(get_db),
 ):
     """통화 녹음 파일(mp3, m4a, wav 등)을 받아 Gemini로 요약하고 이력에 저장한다."""
-    _require_group_member(current_user, group_id, db)
+    require_group_member(current_user, group_id, db)
 
     if not file.content_type or not file.content_type.startswith("audio/"):
         raise HTTPException(
@@ -223,7 +213,7 @@ async def summarize_document(
     db: Session = Depends(get_db),
 ):
     """문서/회의록 파일(pdf, txt, md)을 받아 Gemini로 요약·분류하고 이력에 저장한다."""
-    _require_group_member(current_user, group_id, db)
+    require_group_member(current_user, group_id, db)
 
     suffix = os.path.splitext(file.filename or "")[1].lower()
     if suffix not in ALLOWED_DOCUMENT_EXTENSIONS:
@@ -269,7 +259,7 @@ def list_documents(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_group_member(current_user, group_id, db)
+    require_group_member(current_user, group_id, db)
     docs = db.scalars(
         select(Document)
         .where(
@@ -291,13 +281,16 @@ def delete_document(
     doc = db.get(Document, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다.")
-    if doc.group_id is not None:
-        _require_group_member(current_user, doc.group_id, db)
-    elif current_user.role != "admin":
+    if doc.group_id is None:
+        # 전사 문서 개념을 없앤다. 지울 주체가 정의되지 않는다.
         raise HTTPException(
             status_code=403,
-            detail={"code": "DOCUMENT_DELETE_FORBIDDEN", "message": "전사 공유 문서는 관리자만 삭제할 수 있습니다."},
+            detail={
+                "code": "DOCUMENT_DELETE_FORBIDDEN",
+                "message": "팀에 속하지 않은 문서는 삭제할 수 없습니다.",
+            },
         )
+    require_group_member(current_user, doc.group_id, db)
     db.delete(doc)
     db.commit()
     return {"deleted": True}
@@ -334,7 +327,7 @@ def list_todos(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_group_member(current_user, group_id, db)
+    require_group_member(current_user, group_id, db)
     todos = db.scalars(
         select(Todo)
         .where(Todo.group_id == group_id)
@@ -350,7 +343,7 @@ def create_todo(
     db: Session = Depends(get_db),
 ):
     """요약 리포트에서 액션 아이템을 골라 등록할 때 쓰는 수동 생성 엔드포인트."""
-    _require_group_member(current_user, body.group_id, db)
+    require_group_member(current_user, body.group_id, db)
 
     content = body.content.strip()
     if not content:
@@ -380,7 +373,7 @@ def update_todo(
     todo = db.get(Todo, todo_id)
     if not todo:
         raise HTTPException(status_code=404, detail="할 일을 찾을 수 없습니다.")
-    _require_group_member(current_user, todo.group_id, db)
+    require_group_member(current_user, todo.group_id, db)
     if body.is_done is not None:
         todo.is_done = body.is_done
     if body.content is not None:
@@ -401,7 +394,7 @@ def delete_todo(
     todo = db.get(Todo, todo_id)
     if not todo:
         raise HTTPException(status_code=404, detail="할 일을 찾을 수 없습니다.")
-    _require_group_member(current_user, todo.group_id, db)
+    require_group_member(current_user, todo.group_id, db)
     db.delete(todo)
     db.commit()
     return {"deleted": True}
@@ -415,7 +408,7 @@ class ScheduleUpdate(BaseModel):
 class ScheduleCreate(BaseModel):
     title: str
     scheduled_date: str
-    group_id: int | None = None
+    group_id: int
 
 
 def _serialize_schedule(schedule: Schedule) -> dict:
@@ -433,13 +426,7 @@ def create_schedule(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if body.group_id is not None:
-        _require_group_member(current_user, body.group_id, db)
-    elif current_user.role != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "SCHEDULE_EDIT_FORBIDDEN", "message": "전사 일정은 관리자만 등록할 수 있습니다."},
-        )
+    require_group_member(current_user, body.group_id, db)
     scheduled = _parse_date(body.scheduled_date)
     if not scheduled:
         raise HTTPException(
@@ -459,7 +446,7 @@ def list_schedules(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_group_member(current_user, group_id, db)
+    require_group_member(current_user, group_id, db)
     schedules = db.scalars(
         select(Schedule)
         .where((Schedule.group_id == group_id) | (Schedule.group_id.is_(None)))
@@ -478,13 +465,15 @@ def update_schedule(
     schedule = db.get(Schedule, schedule_id)
     if not schedule:
         raise HTTPException(status_code=404, detail="일정을 찾을 수 없습니다.")
-    if schedule.group_id is not None:
-        _require_group_member(current_user, schedule.group_id, db)
-    elif current_user.role != "admin":
+    if schedule.group_id is None:
         raise HTTPException(
             status_code=403,
-            detail={"code": "SCHEDULE_EDIT_FORBIDDEN", "message": "전사 일정은 관리자만 수정할 수 있습니다."},
+            detail={
+                "code": "SCHEDULE_EDIT_FORBIDDEN",
+                "message": "팀에 속하지 않은 일정은 수정할 수 없습니다.",
+            },
         )
+    require_group_member(current_user, schedule.group_id, db)
     if body.title is not None:
         schedule.title = body.title
     if body.scheduled_date is not None:
@@ -505,13 +494,15 @@ def delete_schedule(
     schedule = db.get(Schedule, schedule_id)
     if not schedule:
         raise HTTPException(status_code=404, detail="일정을 찾을 수 없습니다.")
-    if schedule.group_id is not None:
-        _require_group_member(current_user, schedule.group_id, db)
-    elif current_user.role != "admin":
+    if schedule.group_id is None:
         raise HTTPException(
             status_code=403,
-            detail={"code": "SCHEDULE_EDIT_FORBIDDEN", "message": "전사 일정은 관리자만 수정할 수 있습니다."},
+            detail={
+                "code": "SCHEDULE_EDIT_FORBIDDEN",
+                "message": "팀에 속하지 않은 일정은 수정할 수 없습니다.",
+            },
         )
+    require_group_member(current_user, schedule.group_id, db)
     db.delete(schedule)
     db.commit()
     return {"deleted": True}
@@ -585,16 +576,22 @@ def _serialize_room_member(user: User, room: ChatRoom) -> dict:
     }
 
 
-def _require_room_access(user: User, room_id: int, db: Session) -> ChatRoom:
-    """방을 찾고 그룹 멤버십과 방 초대 여부까지 확인한 뒤 방을 돌려준다."""
+def _get_room_or_404(room_id: int, db: Session) -> ChatRoom:
+    """방을 찾으면 돌려주고, 없으면 404를 던진다."""
     room = db.get(ChatRoom, room_id)
     if not room:
         raise HTTPException(
             status_code=404,
             detail={"code": "CHAT_ROOM_NOT_FOUND", "message": "채팅방을 찾을 수 없습니다."},
         )
+    return room
+
+
+def _require_room_access(user: User, room_id: int, db: Session) -> ChatRoom:
+    """방을 찾고 그룹 멤버십과 방 초대 여부까지 확인한 뒤 방을 돌려준다."""
+    room = _get_room_or_404(room_id, db)
     # 그룹을 먼저 본다. 그룹 밖 사람에게 "초대되지 않았다"고 알려주면 방의 존재가 새어나간다.
-    _require_group_member(user, room.group_id, db)
+    require_group_member(user, room.group_id, db)
     if not db.get(ChatRoomMember, {"room_id": room.id, "user_id": user.id}):
         raise HTTPException(
             status_code=403,
@@ -613,7 +610,7 @@ def list_chat_rooms(
     db: Session = Depends(get_db),
 ):
     """내가 초대된 방만, 마지막 메시지 미리보기까지 함께 내려준다."""
-    _require_group_member(current_user, group_id, db)
+    require_group_member(current_user, group_id, db)
 
     rooms = db.scalars(
         select(ChatRoom)
@@ -648,7 +645,7 @@ def create_chat_room(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _require_group_member(current_user, body.group_id, db)
+    require_group_member(current_user, body.group_id, db)
 
     name = body.name.strip()
     if not name:
@@ -672,14 +669,16 @@ def delete_chat_room(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    room = _require_room_access(current_user, room_id, db)
-    if room.created_by != current_user.id and current_user.role != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "CHAT_ROOM_DELETE_FORBIDDEN",
-                "message": "방을 만든 사람이나 관리자만 삭제할 수 있습니다.",
-            },
+    room = _get_room_or_404(room_id, db)
+    # 생성자는 방에 속할 것으로 가정하고 full access check 수행
+    if room.created_by == current_user.id:
+        _require_room_access(current_user, room_id, db)
+    else:
+        # 생성자가 아니면 admin인지만 확인
+        require_group_admin(
+            current_user, room.group_id, db,
+            code="CHAT_ROOM_DELETE_FORBIDDEN",
+            message="방을 만든 사람이나 팀 관리자만 삭제할 수 있습니다.",
         )
 
     _delete_room_cascade(db, room)
@@ -778,18 +777,17 @@ def remove_room_member(
     db: Session = Depends(get_db),
 ):
     """나가기는 누구나, 내보내기는 방을 만든 사람이나 관리자만."""
-    room = _require_room_access(current_user, room_id, db)
-    if (
-        user_id != current_user.id
-        and room.created_by != current_user.id
-        and current_user.role != "admin"
-    ):
-        raise HTTPException(
-            status_code=403,
-            detail={
-                "code": "CHAT_ROOM_MEMBER_REMOVE_FORBIDDEN",
-                "message": "방을 만든 사람이나 관리자만 다른 사람을 내보낼 수 있습니다.",
-            },
+    room = _get_room_or_404(room_id, db)
+
+    # 본인 또는 생성자가 접근하는 경우, 방에 속해있는지 확인
+    if user_id == current_user.id or room.created_by == current_user.id:
+        _require_room_access(current_user, room_id, db)
+    else:
+        # 다른 사람을 내보내려는 경우, admin인지만 확인
+        require_group_admin(
+            current_user, room.group_id, db,
+            code="CHAT_ROOM_MEMBER_REMOVE_FORBIDDEN",
+            message="방을 만든 사람이나 팀 관리자만 다른 사람을 내보낼 수 있습니다.",
         )
 
     membership = db.get(ChatRoomMember, {"room_id": room_id, "user_id": user_id})

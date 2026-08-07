@@ -18,6 +18,7 @@ from db import Base
 DOCUMENT_CATEGORIES = ("기획", "디자인", "개발", "마케팅", "기타", "통화")
 DOCUMENT_SOURCE_TYPES = ("call", "document")
 USER_ROLES = ("admin", "member")
+GROUP_ROLES = ("admin", "member")
 COMMITMENT_STATUSES = ("proposed", "confirmed", "fulfilled", "dismissed")
 COMMITMENT_SOURCE_TYPES = ("call", "document", "chat")
 # 그룹을 만들면 빈 채팅 목록 대신 바로 쓸 수 있는 방 하나를 함께 만든다.
@@ -55,10 +56,14 @@ class Group(Base):
 
 class GroupMembership(Base):
     __tablename__ = "group_memberships"
-    __table_args__ = (PrimaryKeyConstraint("user_id", "group_id"),)
+    __table_args__ = (
+        PrimaryKeyConstraint("user_id", "group_id"),
+        CheckConstraint(f"role IN {GROUP_ROLES}", name="ck_group_memberships_role"),
+    )
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     group_id: Mapped[int] = mapped_column(ForeignKey("groups.id"))
+    role: Mapped[str] = mapped_column(Text, nullable=False, server_default="member")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -94,6 +99,7 @@ class Announcement(Base):
     __tablename__ = "announcements"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id"), nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     author_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)

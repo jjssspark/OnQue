@@ -7,20 +7,10 @@ from sqlalchemy.orm import Session
 
 from auth import create_access_token, get_current_user, hash_password, verify_password
 from db import get_db
-from models import (
-    DEFAULT_CHAT_ROOM_NAME,
-    ChatRoom,
-    ChatRoomMember,
-    Group,
-    GroupInvitation,
-    GroupMembership,
-    User,
-)
-from routers.groups import get_user_groups, join_group
+from models import GroupInvitation, User
+from routers.groups import get_user_groups_with_role, join_group
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
-
-DEFAULT_GROUP_NAME = "기본 그룹"
 
 
 class SignupBody(BaseModel):
@@ -34,8 +24,17 @@ class LoginBody(BaseModel):
     password: str
 
 
+class ProfileUpdateBody(BaseModel):
+    name: str = Field(min_length=1)
+
+
+class PasswordChangeBody(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
 def _serialize_user(user: User) -> dict:
-    return {"id": user.id, "email": user.email, "name": user.name, "role": user.role}
+    return {"id": user.id, "email": user.email, "name": user.name}
 
 
 @router.post("/auth/signup")
@@ -47,32 +46,15 @@ def signup(body: SignupBody, db: Session = Depends(get_db)):
             detail={"code": "USER_EMAIL_DUPLICATE", "message": "이미 가입된 이메일입니다."},
         )
 
-    is_first_user = db.scalar(select(User).limit(1)) is None
     user = User(
         email=body.email,
         password_hash=hash_password(body.password),
         name=body.name,
-        role="admin" if is_first_user else "member",
+        role="member",
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-
-    # 첫 가입자는 관리자이자 워크스페이스의 시작점이다. 기본 그룹까지 만들어줘야
-    # 로그인 직후 빈 화면을 마주하지 않는다.
-    if is_first_user:
-        group = Group(name=DEFAULT_GROUP_NAME, created_by=user.id)
-        db.add(group)
-        db.commit()
-        db.refresh(group)
-        db.add(GroupMembership(user_id=user.id, group_id=group.id))
-        room = ChatRoom(
-            group_id=group.id, name=DEFAULT_CHAT_ROOM_NAME, created_by=user.id
-        )
-        db.add(room)
-        db.flush()
-        db.add(ChatRoomMember(room_id=room.id, user_id=user.id))
-        db.commit()
 
     # 가입 전에 받아둔 초대를 여기서 정산한다. 이 단계가 없으면 초대가 영영 닿지 않는다.
     pending = db.scalars(
@@ -114,13 +96,44 @@ def login(body: LoginBody, db: Session = Depends(get_db)):
 
 @router.get("/me")
 def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    groups = get_user_groups(current_user.id, db)
-
     return {
         "success": True,
         "data": {
-            "user": _serialize_user(current_user),
-            "groups": [{"id": g.id, "name": g.name} for g in groups],
+            "user": {
+                **_serialize_user(current_user),
+                "created_at": current_user.created_at.isoformat(),
+            },
+            "groups": get_user_groups_with_role(current_user.id, db),
         },
         "error": None,
     }
+
+
+@router.patch("/me")
+def update_me(
+    body: ProfileUpdateBody,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    current_user.name = body.name
+    db.commit()
+    db.refresh(current_user)
+    return {"success": True, "data": _serialize_user(current_user), "error": None}
+
+
+@router.post("/me/password")
+def change_my_password(
+    body: PasswordChangeBody,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """현재 비밀번호를 반드시 확인한다. 토큰만으로 바꿀 수 있으면
+    탈취된 토큰이 그대로 계정 탈취가 된다."""
+    if not verify_password(body.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "USER_PASSWORD_INVALID", "message": "현재 비밀번호가 올바르지 않습니다."},
+        )
+    current_user.password_hash = hash_password(body.new_password)
+    db.commit()
+    return {"success": True, "data": {"changed": True}, "error": None}

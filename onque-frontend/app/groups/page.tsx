@@ -3,25 +3,23 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import {
-  addGroupMember,
   cancelGroupInvitation,
   createGroup,
   inviteToGroupByEmail,
   listGroupInvitations,
   listGroupMembers,
-  listUsers,
   removeGroupMember,
-  type AuthUser,
   type GroupInvitation,
+  type GroupMember,
 } from '@/lib/api';
 
 export default function GroupsPage() {
   const { user, groups, refreshMe } = useAuth();
-  const isAdmin = user?.role === 'admin';
 
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
-  const [members, setMembers] = useState<AuthUser[]>([]);
-  const [allUsers, setAllUsers] = useState<AuthUser[]>([]);
+  const isAdmin = groups.find((g) => g.id === selectedGroupId)?.role === 'admin';
+
+  const [members, setMembers] = useState<GroupMember[]>([]);
   const [newGroupName, setNewGroupName] = useState('');
   const [invitations, setInvitations] = useState<GroupInvitation[]>([]);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -52,13 +50,6 @@ export default function GroupsPage() {
     if (selectedGroupId !== null) loadMembers(selectedGroupId);
   }, [selectedGroupId, loadMembers]);
 
-  useEffect(() => {
-    if (!isAdmin) return;
-    listUsers()
-      .then(setAllUsers)
-      .catch(() => setAllUsers([]));
-  }, [isAdmin]);
-
   async function handleCreateGroup(e: React.FormEvent) {
     e.preventDefault();
     const name = newGroupName.trim();
@@ -73,20 +64,6 @@ export default function GroupsPage() {
       setSelectedGroupId(group.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : '그룹 생성에 실패했습니다.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleAddMember(userId: number) {
-    if (selectedGroupId === null || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await addGroupMember(selectedGroupId, userId);
-      await loadMembers(selectedGroupId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '멤버 추가에 실패했습니다.');
     } finally {
       setBusy(false);
     }
@@ -147,9 +124,6 @@ export default function GroupsPage() {
     }
   }
 
-  const memberIds = new Set(members.map((m) => m.id));
-  const candidates = allUsers.filter((u) => !memberIds.has(u.id));
-
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
       <p className="font-mono text-xs uppercase tracking-widest text-brand">Groups</p>
@@ -165,7 +139,7 @@ export default function GroupsPage() {
         </p>
       )}
 
-      {isAdmin && (
+      {groups.length > 0 && (
         <form onSubmit={handleCreateGroup} className="mt-6 flex gap-2">
           <input
             type="text"
@@ -185,9 +159,28 @@ export default function GroupsPage() {
       )}
 
       {groups.length === 0 ? (
-        <p className="mt-8 rounded-xl border border-dashed border-border p-10 text-center text-sm text-foreground/40">
-          아직 소속된 그룹이 없습니다. 관리자가 그룹에 초대하면 표시됩니다.
-        </p>
+        <div className="mt-8 rounded-xl border border-dashed border-border p-10 text-center">
+          <h2 className="text-sm font-bold text-foreground">아직 속한 팀이 없습니다</h2>
+          <p className="mt-2 text-sm text-foreground/60">
+            팀을 만들면 동료를 이메일로 초대할 수 있습니다.
+          </p>
+          <form onSubmit={handleCreateGroup} className="mt-6 flex justify-center gap-2">
+            <input
+              type="text"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              placeholder="팀 이름"
+              className="w-full max-w-xs rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+            />
+            <button
+              type="submit"
+              disabled={busy || !newGroupName.trim()}
+              className="shrink-0 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-brand-foreground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              팀 만들기
+            </button>
+          </form>
+        </div>
       ) : (
         <div className="mt-8 grid gap-6 md:grid-cols-[200px_1fr]">
           <nav className="space-y-1">
@@ -286,38 +279,6 @@ export default function GroupsPage() {
                       ))}
                     </ul>
                   </>
-                )}
-              </section>
-            )}
-
-            {isAdmin && (
-              <section className="rounded-xl border border-border bg-surface p-5 shadow-sm">
-                <h2 className="text-sm font-bold text-foreground">가입한 사람 중에서 추가</h2>
-                {candidates.length === 0 ? (
-                  <p className="mt-3 text-xs text-foreground/40">
-                    가입한 사용자가 모두 이 그룹에 있습니다. 새로운 사람은 위에서 이메일로
-                    초대하세요.
-                  </p>
-                ) : (
-                  <ul className="mt-3 divide-y divide-border">
-                    {candidates.map((u) => (
-                      <li key={u.id} className="flex items-center justify-between gap-3 py-2.5">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm text-foreground">{u.name}</p>
-                          <p className="truncate font-mono text-[11px] text-foreground/40">
-                            {u.email}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => handleAddMember(u.id)}
-                          disabled={busy}
-                          className="shrink-0 rounded-md border border-border px-2.5 py-1 text-[11px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/5 disabled:opacity-50"
-                        >
-                          초대
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
                 )}
               </section>
             )}
