@@ -5,6 +5,10 @@ def _signup(client, email, name):
     ).json()["data"]
 
 
+def _user_id(client, headers) -> int:
+    return client.get("/api/v1/me", headers=headers).json()["data"]["user"]["id"]
+
+
 def _setup(client):
     admin = _signup(client, "admin@onque.dev", "관리자")
     token = admin["token"]
@@ -148,5 +152,43 @@ def test_delete_room_forbidden_for_other_member(client):
         f"/chat/rooms/{room['id']}", headers={"Authorization": f"Bearer {member['token']}"}
     )
 
+    assert res.status_code == 403
+    assert res.json()["error"]["code"] == "CHAT_ROOM_DELETE_FORBIDDEN"
+
+
+def test_group_admin_can_delete_someone_elses_room(client):
+    owner_data = _signup(client, "r1@t.dev", "관리자")
+    owner_headers = {"Authorization": f"Bearer {owner_data['token']}"}
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner_headers).json()["data"]["id"]
+    client.post(f"/api/v1/groups/{gid}/invitations", json={"email": "r2@t.dev"}, headers=owner_headers)
+    member_data = _signup(client, "r2@t.dev", "멤버")
+    member_headers = {"Authorization": f"Bearer {member_data['token']}"}
+
+    room_id = client.post(
+        "/chat/rooms", json={"group_id": gid, "name": "멤버방"}, headers=member_headers
+    ).json()["id"]
+
+    assert client.delete(f"/chat/rooms/{room_id}", headers=owner_headers).status_code == 200
+
+
+def test_plain_member_cannot_delete_someone_elses_room(client):
+    owner_data = _signup(client, "r3@t.dev", "관리자")
+    owner_headers = {"Authorization": f"Bearer {owner_data['token']}"}
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner_headers).json()["data"]["id"]
+    for email in ("r4@t.dev", "r5@t.dev"):
+        client.post(f"/api/v1/groups/{gid}/invitations", json={"email": email}, headers=owner_headers)
+    a_data = _signup(client, "r4@t.dev", "A")
+    a_headers = {"Authorization": f"Bearer {a_data['token']}"}
+    b_data = _signup(client, "r5@t.dev", "B")
+    b_headers = {"Authorization": f"Bearer {b_data['token']}"}
+
+    room_id = client.post(
+        "/chat/rooms", json={"group_id": gid, "name": "A방"}, headers=a_headers
+    ).json()["id"]
+    client.post(
+        f"/chat/rooms/{room_id}/members", json={"user_id": _user_id(client, b_headers)}, headers=a_headers
+    )
+
+    res = client.delete(f"/chat/rooms/{room_id}", headers=b_headers)
     assert res.status_code == 403
     assert res.json()["error"]["code"] == "CHAT_ROOM_DELETE_FORBIDDEN"
