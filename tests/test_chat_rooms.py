@@ -166,6 +166,9 @@ def test_group_admin_can_delete_someone_elses_room(client):
     client.post(f"/api/v1/groups/{gid}/invitations", json={"email": "r2@t.dev"}, headers=owner_headers)
     member_data = _signup(client, "r2@t.dev", "멤버")
     member_headers = {"Authorization": f"Bearer {member_data['token']}"}
+    # 초대만으로는 합류하지 않는다. 수락해야 멤버가 된다.
+    inv_id = client.get("/api/v1/me/invitations", headers=member_headers).json()["data"][0]["id"]
+    client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=member_headers)
 
     room_id = client.post(
         "/chat/rooms", json={"group_id": gid, "name": "멤버방"}, headers=member_headers
@@ -186,6 +189,10 @@ def test_group_admin_can_kick_someone_elses_room_member(client, db_session):
     target_data = _signup(client, "r8@t.dev", "멤버")
     target_headers = {"Authorization": f"Bearer {target_data['token']}"}
     target_id = _user_id(client, target_headers)
+    # 초대만으로는 합류하지 않는다. 수락해야 멤버가 된다.
+    for headers in (creator_headers, target_headers):
+        inv_id = client.get("/api/v1/me/invitations", headers=headers).json()["data"][0]["id"]
+        client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=headers)
 
     room_id = client.post(
         "/chat/rooms", json={"group_id": gid, "name": "다른방"}, headers=creator_headers
@@ -211,6 +218,10 @@ def test_plain_member_cannot_delete_someone_elses_room(client):
     a_headers = {"Authorization": f"Bearer {a_data['token']}"}
     b_data = _signup(client, "r5@t.dev", "B")
     b_headers = {"Authorization": f"Bearer {b_data['token']}"}
+    # 초대만으로는 합류하지 않는다. 수락해야 멤버가 된다.
+    for headers in (a_headers, b_headers):
+        inv_id = client.get("/api/v1/me/invitations", headers=headers).json()["data"][0]["id"]
+        client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=headers)
 
     room_id = client.post(
         "/chat/rooms", json={"group_id": gid, "name": "A방"}, headers=a_headers

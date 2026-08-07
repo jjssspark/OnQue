@@ -131,8 +131,10 @@ def test_me_reports_role_per_group(client):
     a = _signup(client, "p1@t.dev", "A")
     b = _signup(client, "p2@t.dev", "B")
     gid_b = client.post("/api/v1/groups", json={"name": "B팀"}, headers=b).json()["data"]["id"]
-    # p1은 이미 가입돼 있으므로 초대 즉시 합류한다
     client.post(f"/api/v1/groups/{gid_b}/invitations", json={"email": "p1@t.dev"}, headers=b)
+    # 초대만으로는 합류하지 않는다. 수락해야 멤버가 된다.
+    inv_id = client.get("/api/v1/me/invitations", headers=a).json()["data"][0]["id"]
+    client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=a)
     gid_a = client.post("/api/v1/groups", json={"name": "A팀"}, headers=a).json()["data"]["id"]
 
     groups = client.get("/api/v1/me", headers=a).json()["data"]["groups"]

@@ -173,6 +173,9 @@ def test_group_member_can_delete_group_document(client, db_session):
     gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
     client.post(f"/api/v1/groups/{gid}/invitations", json={"email": "d2@t.dev"}, headers=owner)
     member = _signup(client, "d2@t.dev", "멤버")
+    # 초대만으로는 합류하지 않는다. 수락해야 멤버가 된다.
+    inv_id = client.get("/api/v1/me/invitations", headers=member).json()["data"][0]["id"]
+    client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=member)
 
     doc = Document(
         group_id=gid, source_type="document", category="기타",

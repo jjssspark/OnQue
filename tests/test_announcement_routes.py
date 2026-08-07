@@ -42,6 +42,9 @@ def test_member_cannot_write_announcement(client):
     gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner).json()["data"]["id"]
     client.post(f"/api/v1/groups/{gid}/invitations", json={"email": "gd@t.dev"}, headers=owner)
     member = _signup(client, "gd@t.dev", "멤버")
+    # 초대만으로는 합류하지 않는다. 수락해야 멤버가 된다.
+    inv_id = client.get("/api/v1/me/invitations", headers=member).json()["data"][0]["id"]
+    client.post(f"/api/v1/me/invitations/{inv_id}/accept", headers=member)
 
     # Owner가 공지를 쓴다
     client.post(

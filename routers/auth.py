@@ -56,19 +56,6 @@ def signup(body: SignupBody, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    # 가입 전에 받아둔 초대를 여기서 정산한다. 이 단계가 없으면 초대가 영영 닿지 않는다.
-    pending = db.scalars(
-        select(GroupInvitation).where(
-            func.lower(GroupInvitation.email) == body.email.lower(),
-            GroupInvitation.accepted_at.is_(None),
-        )
-    ).all()
-    for invitation in pending:
-        join_group(db, user.id, invitation.group_id)
-        invitation.accepted_at = datetime.now(timezone.utc)
-    if pending:
-        db.commit()
-
     token = create_access_token(user.id)
     return {
         "success": True,

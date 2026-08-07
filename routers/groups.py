@@ -205,7 +205,7 @@ def invite_to_group_by_email(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """이메일로 초대한다. 아직 가입 전이면 대기 상태로 남고, 가입 시 자동 합류한다."""
+    """이메일로 초대한다. 누구든 수락해야 들어간다 — 가입 여부와 무관하게 대기 상태로 남는다."""
     require_group_admin(
         current_user, group_id, db,
         code="GROUP_INVITE_FORBIDDEN", message="관리자만 초대할 수 있습니다.",
@@ -213,30 +213,17 @@ def invite_to_group_by_email(
 
     email = body.email.strip().lower()
 
-    # 가입 컬럼은 대소문자를 구분해 저장돼 있다. 비교는 양쪽 모두 소문자로.
+    # 이미 우리 팀 멤버인지 확인한다. 관리자가 GET /groups/{id}/members로
+    # 이미 볼 수 있는 정보라 이 409는 새로 새는 것이 없다.
     user = db.scalar(select(User).where(func.lower(User.email) == email))
-    if user:
-        if db.get(GroupMembership, {"user_id": user.id, "group_id": group_id}):
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "GROUP_INVITE_ALREADY_MEMBER",
-                    "message": "이미 이 그룹에 있는 사람입니다.",
-                },
-            )
-        # 이미 가입한 사람을 대기시킬 이유가 없다. 바로 넣되 기록은 남긴다.
-        join_group(db, user.id, group_id)
-        _upsert_invitation(db, group_id, email, current_user.id, accepted=True)
-        db.commit()
-        return {
-            "success": True,
-            "data": {
-                "status": "joined",
-                "email": email,
-                "user": {"id": user.id, "email": user.email, "name": user.name},
+    if user and db.get(GroupMembership, {"user_id": user.id, "group_id": group_id}):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "GROUP_INVITE_ALREADY_MEMBER",
+                "message": "이미 이 그룹에 있는 사람입니다.",
             },
-            "error": None,
-        }
+        )
 
     existing = db.scalar(
         select(GroupInvitation).where(
@@ -252,11 +239,13 @@ def invite_to_group_by_email(
             },
         )
 
-    inv = _upsert_invitation(db, group_id, email, current_user.id, accepted=False)
+    # 가입자든 미가입자든 여기 하나로 모인다. 응답이 갈리면 임의 이메일의
+    # 가입 여부를 알아낼 수 있다.
+    _upsert_invitation(db, group_id, email, current_user.id, accepted=False)
     db.commit()
     return {
         "success": True,
-        "data": {"status": "pending", "email": email, "invitation": _serialize_invitation(inv)},
+        "data": {"status": "invited", "email": email},
         "error": None,
     }
 
