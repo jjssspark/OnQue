@@ -43,6 +43,14 @@ def test_member_cannot_write_announcement(client):
     client.post(f"/api/v1/groups/{gid}/invitations", json={"email": "gd@t.dev"}, headers=owner)
     member = _signup(client, "gd@t.dev", "멤버")
 
+    # Owner가 공지를 쓴다
+    client.post(
+        "/api/v1/announcements",
+        json={"group_id": gid, "title": "공지", "content": "내용"},
+        headers=owner,
+    )
+
+    # Member는 작성할 수 없다
     res = client.post(
         "/api/v1/announcements",
         json={"group_id": gid, "title": "몰래", "content": "내용"},
@@ -50,6 +58,12 @@ def test_member_cannot_write_announcement(client):
     )
     assert res.status_code == 403
     assert res.json()["error"]["code"] == "ANNOUNCEMENT_CREATE_FORBIDDEN"
+
+    # 하지만 목록은 볼 수 있다
+    list_res = client.get(f"/api/v1/announcements?group_id={gid}", headers=member)
+    assert list_res.status_code == 200
+    assert len(list_res.json()["data"]) == 1
+    assert list_res.json()["data"][0]["title"] == "공지"
 
 
 def test_announcement_list_is_paginated(client):
