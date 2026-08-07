@@ -346,7 +346,7 @@ export function getMe(): Promise<MeResponse> {
   return requestEnveloped('/api/v1/me');
 }
 
-export function createGroup(name: string): Promise<GroupSummary> {
+export function createGroup(name: string): Promise<{ id: number; name: string }> {
   return requestEnveloped('/api/v1/groups', {
     method: 'POST',
     body: JSON.stringify({ name }),

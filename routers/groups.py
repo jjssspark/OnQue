@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -71,7 +71,7 @@ def get_user_groups_with_role(user_id: int, db: Session) -> list[dict]:
 
 
 class GroupCreateBody(BaseModel):
-    name: str
+    name: str = Field(min_length=1)
 
 
 class GroupInviteBody(BaseModel):

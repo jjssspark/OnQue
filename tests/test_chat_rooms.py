@@ -1,3 +1,6 @@
+from models import ChatRoomMember
+
+
 def _signup(client, email, name):
     return client.post(
         "/api/v1/auth/signup",
@@ -169,6 +172,33 @@ def test_group_admin_can_delete_someone_elses_room(client):
     ).json()["id"]
 
     assert client.delete(f"/chat/rooms/{room_id}", headers=owner_headers).status_code == 200
+
+
+def test_group_admin_can_kick_someone_elses_room_member(client, db_session):
+    """방 멤버가 아닌 그룹 admin도 다른 사람이 만든 방의 멤버를 강퇴할 수 있어야 한다."""
+    owner_data = _signup(client, "r6@t.dev", "관리자")
+    owner_headers = {"Authorization": f"Bearer {owner_data['token']}"}
+    gid = client.post("/api/v1/groups", json={"name": "A팀"}, headers=owner_headers).json()["data"]["id"]
+    for email in ("r7@t.dev", "r8@t.dev"):
+        client.post(f"/api/v1/groups/{gid}/invitations", json={"email": email}, headers=owner_headers)
+    creator_data = _signup(client, "r7@t.dev", "방장")
+    creator_headers = {"Authorization": f"Bearer {creator_data['token']}"}
+    target_data = _signup(client, "r8@t.dev", "멤버")
+    target_headers = {"Authorization": f"Bearer {target_data['token']}"}
+    target_id = _user_id(client, target_headers)
+
+    room_id = client.post(
+        "/chat/rooms", json={"group_id": gid, "name": "다른방"}, headers=creator_headers
+    ).json()["id"]
+    client.post(
+        f"/chat/rooms/{room_id}/members", json={"user_id": target_id}, headers=creator_headers
+    )
+
+    res = client.delete(f"/chat/rooms/{room_id}/members/{target_id}", headers=owner_headers)
+    assert res.status_code == 200
+
+    remaining = db_session.get(ChatRoomMember, {"room_id": room_id, "user_id": target_id})
+    assert remaining is None
 
 
 def test_plain_member_cannot_delete_someone_elses_room(client):

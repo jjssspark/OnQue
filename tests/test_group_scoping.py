@@ -1,4 +1,6 @@
-from models import Document, Todo
+from datetime import date
+
+from models import Document, Schedule, Todo
 
 
 def _signup(client, email, name):
@@ -195,3 +197,29 @@ def test_groupless_document_cannot_be_deleted_by_anyone(client, db_session):
     res = client.delete(f"/documents/{doc.id}", headers=headers)
     assert res.status_code == 403
     assert res.json()["error"]["code"] == "DOCUMENT_DELETE_FORBIDDEN"
+
+
+def test_groupless_schedule_cannot_be_updated_by_anyone(client, db_session):
+    """전역 admin이 사라져 이 일정을 수정할 주체가 없다. 운영에 0건이지만 방어한다."""
+    headers = _signup(client, "s1@t.dev", "누구")
+    schedule = Schedule(group_id=None, title="고아 일정", scheduled_date=date(2026, 9, 1))
+    db_session.add(schedule)
+    db_session.commit()
+
+    res = client.patch(
+        f"/schedules/{schedule.id}", json={"title": "바꾼 제목"}, headers=headers
+    )
+    assert res.status_code == 403
+    assert res.json()["error"]["code"] == "SCHEDULE_EDIT_FORBIDDEN"
+
+
+def test_groupless_schedule_cannot_be_deleted_by_anyone(client, db_session):
+    """전역 admin이 사라져 이 일정을 지울 주체가 없다. 운영에 0건이지만 방어한다."""
+    headers = _signup(client, "s2@t.dev", "누구")
+    schedule = Schedule(group_id=None, title="고아 일정", scheduled_date=date(2026, 9, 1))
+    db_session.add(schedule)
+    db_session.commit()
+
+    res = client.delete(f"/schedules/{schedule.id}", headers=headers)
+    assert res.status_code == 403
+    assert res.json()["error"]["code"] == "SCHEDULE_EDIT_FORBIDDEN"

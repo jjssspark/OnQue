@@ -139,7 +139,7 @@ export default function GroupsPage() {
         </p>
       )}
 
-      {isAdmin && (
+      {groups.length > 0 && (
         <form onSubmit={handleCreateGroup} className="mt-6 flex gap-2">
           <input
             type="text"
