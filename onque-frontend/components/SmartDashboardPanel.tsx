@@ -1,14 +1,45 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useWorkspace } from '@/components/WorkspaceContext';
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
 }
 
+/** 마감까지 남은 날을 사람 말로. 서버 호출 없이 시간만으로 계산한다. */
+function dueLabel(dueDate: string | null): string {
+  if (!dueDate) return '기한 없음';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(`${dueDate}T00:00:00`);
+  const days = Math.round((due.getTime() - today.getTime()) / 86_400_000);
+  if (days === 0) return '오늘 마감';
+  if (days > 0) return `${days}일 남음`;
+  return `${-days}일 지남`;
+}
+
+/** lastSyncedAt 이후 흐른 시간을 1초마다 다시 계산한다. API 호출은 없다. */
+function useElapsedLabel(lastSyncedAt: number | null): string | null {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (lastSyncedAt === null) return null;
+  const secs = Math.floor((Date.now() - lastSyncedAt) / 1000);
+  if (secs < 5) return '방금 갱신';
+  if (secs < 60) return `${secs}초 전 갱신`;
+  return `${Math.floor(secs / 60)}분 전 갱신`;
+}
+
 export function SmartDashboardPanel() {
-  const { todos, schedules, loading, error, toggleTodo, removeTodo, removeSchedule } =
-    useWorkspace();
+  const { todos, schedules, loading, error, toggleTodo, removeTodo, removeSchedule,
+          proposedCount, dueSoon, lastSyncedAt } = useWorkspace();
+  const elapsed = useElapsedLabel(lastSyncedAt);
   const openTodos = todos.filter((t) => !t.is_done);
   const doneTodos = todos.filter((t) => t.is_done);
 
@@ -17,6 +48,9 @@ export function SmartDashboardPanel() {
       <div className="border-b border-border px-5 py-5">
         <p className="font-mono text-xs uppercase tracking-widest text-brand">Smart Dashboard</p>
         <h2 className="mt-1 text-sm font-bold text-foreground">실시간 업무 현황</h2>
+        {elapsed && (
+          <p className="mt-1 font-mono text-[10px] text-foreground/30">{elapsed}</p>
+        )}
       </div>
 
       {error && (
@@ -28,6 +62,44 @@ export function SmartDashboardPanel() {
           상태입니다.
           <span className="mt-1 block font-mono text-[10px] opacity-70">{error}</span>
         </p>
+      )}
+
+      {(proposedCount > 0 || dueSoon.length > 0) && (
+        <section className="border-b border-border px-5 py-4">
+          {proposedCount > 0 && (
+            <Link
+              href="/dashboard"
+              className="mb-3 flex items-center justify-between rounded-lg border border-accent/30 bg-accent/[0.06] px-3 py-2 transition hover:bg-accent/[0.12]"
+            >
+              <span className="text-xs font-bold text-foreground">확인 필요</span>
+              <span className="font-mono text-xs text-accent">{proposedCount}건</span>
+            </Link>
+          )}
+
+          {dueSoon.length > 0 && (
+            <Link
+              href="/dashboard"
+              aria-label={`기한 주의 약속 ${dueSoon.length}건 전체 보기`}
+              className="block rounded-lg transition hover:bg-foreground/[0.04]"
+            >
+              <h3 className="mb-2 text-xs font-bold text-foreground/70">기한 주의 {dueSoon.length}</h3>
+              <ul className="space-y-2">
+                {dueSoon.slice(0, 5).map((c) => (
+                  <li key={c.id} className="min-w-0">
+                    <p className="truncate text-xs leading-relaxed text-foreground/90">{c.content}</p>
+                    <p
+                      className={`font-mono text-[10px] ${
+                        c.is_overdue ? 'text-red-400' : 'text-accent'
+                      }`}
+                    >
+                      {dueLabel(c.due_date)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </Link>
+          )}
+        </section>
       )}
 
       <section className="border-b border-border px-5 py-4">
