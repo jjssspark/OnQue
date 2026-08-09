@@ -37,18 +37,79 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
 from fastapi.responses import JSONResponse
-from fastapi.exceptions import HTTPException as FastAPIHTTPException
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+# 라우터가 dict detail로 코드를 직접 주지 않은 응답에 붙일 기본값.
+# 프론트는 message가 아니라 code로 분기하므로(api-contract.md) 코드가 없거나
+# 전부 INTERNAL_ERROR면 404와 500을 구분할 방법이 없다.
+_DEFAULT_ERROR_CODES = {
+    400: "BAD_REQUEST",
+    401: "UNAUTHORIZED",
+    403: "FORBIDDEN",
+    404: "NOT_FOUND",
+    405: "METHOD_NOT_ALLOWED",
+    409: "CONFLICT",
+    422: "VALIDATION_FAILED",
+    429: "RATE_LIMIT_EXCEEDED",
+}
 
 
-@app.exception_handler(FastAPIHTTPException)
-async def http_exception_handler(request, exc: FastAPIHTTPException):
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc: StarletteHTTPException):
+    # FastAPI의 HTTPException은 Starlette 것의 하위 클래스다. 상위 클래스에
+    # 걸어야 라우터 자신이 던지는 404·405까지 같은 봉투로 나간다 — 하위
+    # 클래스에만 걸면 그것들이 {"detail": ...} 그대로 새어나간다.
     if isinstance(exc.detail, dict):
         error = exc.detail
     else:
-        error = {"code": "INTERNAL_ERROR", "message": str(exc.detail)}
+        error = {
+            "code": _DEFAULT_ERROR_CODES.get(exc.status_code, "INTERNAL_ERROR"),
+            "message": str(exc.detail),
+        }
     return JSONResponse(
         status_code=exc.status_code,
         content={"success": False, "data": None, "error": error},
+        # 405는 Allow 헤더를 달고 온다. 버리면 규격 위반이다.
+        headers=getattr(exc, "headers", None),
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc: RequestValidationError):
+    # 어느 필드가 왜 틀렸는지는 details로 내린다. 메시지 문자열을 파싱하게
+    # 만들면 서버 문구를 고칠 때마다 프론트가 깨진다.
+    details = [
+        # loc는 ("body", "email") 꼴이다. 첫 칸은 위치(body/query/path)라 필드명이 아니다.
+        {"field": ".".join(str(p) for p in err["loc"][1:]) or None, "code": err["type"]}
+        for err in exc.errors()
+    ]
+    return JSONResponse(
+        status_code=422,
+        content={
+            "success": False,
+            "data": None,
+            "error": {
+                "code": "VALIDATION_FAILED",
+                "message": "입력값을 확인해주세요",
+                "details": details,
+            },
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request, exc: Exception):
+    # 스택 트레이스는 서버 로그에만 남긴다. 응답에 실으면 내부 경로와 접속
+    # 정보가 그대로 새어나간다(api-contract.md).
+    logger.exception("처리하지 못한 예외: %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "data": None,
+            "error": {"code": "INTERNAL_ERROR", "message": "서버 오류가 발생했습니다."},
+        },
     )
 
 app.add_middleware(
