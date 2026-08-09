@@ -21,6 +21,7 @@
 
 | ID | 날짜 | 영역 | 문제 | 심각도 | 상태 |
 |---|---|---|---|---|---|
+| TS-027 | 2026-08-09 | BE/API | 예외 핸들러를 등록해뒀는데 404·405만 봉투를 빠져나감 — FastAPI의 `HTTPException`이 Starlette 것의 **하위** 클래스라, 하위에 건 핸들러가 상위로 던져지는 예외를 못 잡음 | Medium | 해결됨 |
 | TS-026 | 2026-08-07 | Infra/개발환경 | 워크트리에서 `npm run build`가 코드를 컴파일하기도 전에 죽음 — TS-023에서 만든 `node_modules` 심링크를 Turbopack이 "파일시스템 루트 밖"으로 판정 | Medium | 우회 (`--webpack`) |
 | TS-025 | 2026-08-06 | 프로세스/테스트 | 테스트 이름과 본문이 어긋난 걸 바로잡는 과정에서, 원래 커버되던 케이스가 대체 없이 사라짐 — 스위트는 통과하고 커버리지 숫자도 늘어서 안 드러남 | Medium | 해결됨 |
 | TS-024 | 2026-08-06 | 프로세스/테스트 | "태스크마다 전체 테스트 통과 후 커밋"이 2번 태스크에서 구조적으로 불가능 — 전역 admin을 없앤 순간, 나중 태스크가 삭제할 동작을 단언하는 기존 테스트 4개가 그때부터 6번 태스크까지 계속 빨간불 | Medium | 우회 (실패 허용 집합 고정) |
@@ -54,6 +55,111 @@
 ---
 
 ## 기록
+
+## TS-027 · 핸들러를 달았는데 404·405만 봉투 밖으로 새어나갔다
+
+| | |
+|---|---|
+| **날짜** | 2026-08-09 |
+| **영역** | BE / API 계약 |
+| **심각도** | Medium (프론트의 `error.code` 분기가 특정 상태에서 불가능) |
+| **상태** | 해결됨 |
+| **소요 시간** | 원인 특정까지 약 15분 (클래스 계층 확인이 결정타) |
+
+### 증상
+
+`main.py`에 예외 핸들러가 **분명히 등록돼 있는데도** 일부 응답만 봉투(`{success, data, error}`)를 벗어난다.
+
+```
+$ curl https://<REDACTED>/api/v1/does-not-exist
+{"detail":"Not Found"}
+
+$ curl -X DELETE https://<REDACTED>/api/v1/me
+{"detail":"Method Not Allowed"}
+```
+
+라우터가 직접 `raise HTTPException(...)` 한 403·409는 멀쩡히 봉투로 나온다. **같은 앱, 같은 핸들러인데 어떤 건 잡히고 어떤 건 안 잡힌다.** 에러 메시지에는 단서가 전혀 없다 — 핸들러가 안 걸렸다는 신호 자체가 없고, 그냥 FastAPI 기본 응답이 나올 뿐이다.
+
+### 재현 조건
+
+- FastAPI + Starlette
+- 핸들러를 `@app.exception_handler(fastapi.exceptions.HTTPException)`으로 등록
+- 존재하지 않는 경로(404) 또는 허용되지 않은 메서드(405) 요청
+
+### 원인
+
+**표면**: 404·405는 라우터가 아니라 **Starlette 내부**가 던진다.
+
+**근본**: `fastapi.HTTPException`은 `starlette.exceptions.HTTPException`의 **하위 클래스**다. 핸들러를 하위 클래스에 걸면 상위 클래스로 던져진 예외는 매칭되지 않는다.
+
+```
+starlette.exceptions.HTTPException   ← Starlette 라우터가 404·405를 이걸로 던진다
+        └── fastapi.HTTPException     ← 우리가 핸들러를 여기 걸어놨다
+```
+
+우리 라우터 코드는 항상 `fastapi.HTTPException`을 쓰니 전부 잡힌다. 그래서 **직접 짠 경로는 100% 정상으로 보이고, 프레임워크가 만드는 응답만 조용히 새어나간다.** 개발 중엔 라우터 코드만 테스트하니 드러날 일이 없다.
+
+422(`RequestValidationError`)와 처리 못 한 예외(500)는 아예 별개 클래스라 애초에 핸들러가 없었다.
+
+### 시도했지만 안 된 것
+
+- **핸들러 본문을 의심** — `isinstance(exc.detail, dict)` 분기가 잘못됐나 먼저 봤다. 본문은 멀쩡했고, 애초에 **호출조차 안 되고 있었다.** 핸들러에 로그를 하나 심어봤다면 5분 만에 갈렸을 문제다.
+- **경로 오타·prefix 문제 의심** — 404가 나오니 라우팅 설정을 봤다. 405가 같이 새는 걸 보고서야 "라우팅이 아니라 예외 처리"로 방향을 틀었다.
+
+### 해결
+
+핸들러를 **상위 클래스**에 등록한다. 하위 클래스는 자동으로 함께 잡힌다.
+
+```python
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc: StarletteHTTPException):
+    ...
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"success": False, "data": None, "error": error},
+        headers=getattr(exc, "headers", None),  # 405의 Allow 헤더를 버리면 규격 위반
+    )
+```
+
+문자열 `detail`에 붙일 기본 코드도 상태 기반으로 바꿨다. 이전엔 전부 `INTERNAL_ERROR`라 404와 500이 프론트에서 구분되지 않았다.
+
+`RequestValidationError`(422)와 `Exception`(500) 핸들러도 새로 달았다. 500은 스택 트레이스와 내부 경로를 **응답에 싣지 않고** 서버 로그에만 남긴다.
+
+### 검증
+
+프로덕션(Render 배포 후)에서 직접 확인했다.
+
+```
+$ curl https://<REDACTED>/api/v1/does-not-exist
+{"success":false,"data":null,"error":{"code":"NOT_FOUND","message":"Not Found"}}
+
+$ curl -X DELETE https://<REDACTED>/api/v1/me
+{"success":false,"data":null,"error":{"code":"METHOD_NOT_ALLOWED","message":"Method Not Allowed"}}
+
+$ curl -X POST https://<REDACTED>/api/v1/auth/signup -d '{"email":"not-an-email","password":"short","name":"이름"}'
+{"success":false,"data":null,"error":{"code":"VALIDATION_FAILED","message":"입력값을 확인해주세요",
+ "details":[{"field":"email","code":"value_error"},{"field":"password","code":"string_too_short"}]}}
+```
+
+테스트 5개를 먼저 써서 전부 실패(RED)하는 걸 확인한 뒤 구현했다. 전체 스위트 195 passed(기존 190 + 5).
+
+500 응답에 비밀값이 안 새는지는 일부러 `RuntimeError("psycopg2 연결 실패: host=10.0.0.5 password=hunter2")`를 던져 응답 본문에 `psycopg2`·`hunter2`·`Traceback`·`routers/auth.py`가 없음을 단언했다.
+
+### 추후 관리
+
+- **500 응답에는 CORS 헤더가 붙지 않는다.** 처리 못 한 예외는 Starlette의 `ServerErrorMiddleware`가 처리하는데, 이건 `CORSMiddleware`보다 **바깥**에 있다. 프론트(Vercel)와 백엔드(Render)가 다른 오리진이라, 브라우저는 이 봉투를 읽지 못하고 CORS 오류로 본다. **이 동작은 이번 변경 이전과 동일하므로 회귀는 아니다** — 다만 "500인데 프론트에 CORS 에러가 뜬다"는 신고가 오면 이걸 먼저 떠올릴 것. 제대로 고치려면 미들웨어 순서를 손대야 한다.
+- 422 문구가 pydantic 원문에서 "입력값을 확인해주세요"로 통일됐다. 필드별 사유는 `error.details`에 있으나 **프론트가 아직 안 읽는다.** 회원가입 화면의 문구를 세밀하게 하려면 그쪽 작업이 별도로 필요하다.
+- 새 예외 클래스를 도입할 때는 **클래스 계층을 먼저 확인**하고 가능한 한 상위에 핸들러를 건다.
+
+### 배운 점
+
+**핸들러가 "등록돼 있다"와 "호출된다"는 다른 말이다.** 등록은 성공했고 문법 오류도 없었지만 매칭이 안 됐다. 예외 핸들러가 안 먹는 것 같으면 본문을 읽기 전에 **로그를 한 줄 심어 호출 여부부터 가른다.** 본문 디버깅은 그다음이다.
+
+**프레임워크가 대신 만들어주는 응답이 계약의 사각지대다.** 우리가 짠 코드는 전부 봉투를 지켰다. 깨진 건 아무도 안 짠 경로 — 없는 URL, 잘못된 메서드, 검증 실패, 예상 못 한 예외 — 였다. **직접 짠 것만 테스트하면 이 구멍은 영원히 안 보인다.** 그래서 이번엔 "라우터를 거치지 않는 응답"만 골라 테스트를 짰다.
+
+---
 
 ## TS-026 · 개발환경을 살린 심링크가 빌드 도구를 죽였다
 
@@ -830,6 +936,14 @@ except IntegrityError:
 - 유니크 제약이 있는 테이블에 생성 엔드포인트를 추가할 때마다 같은 처리를 반복해야 한다. 반복이 3번을 넘으면 헬퍼로 뽑는다.
 - **범용 `Exception` 핸들러를 추가하는 편이 근본 대책이다.** 어떤 예외가 새더라도 `traceId`를 담은 `INTERNAL_ERROR` 봉투로 나가게 하면 이 부류의 구멍이 한 번에 막힌다. 이번 범위 밖이라 하지 않았다.
 - `api-contract.md`는 500 응답에 스택 트레이스를 담지 말 것을 요구한다. 범용 핸들러를 넣을 때 함께 지켜야 한다.
+
+#### 후속 (2026-08-09)
+
+**재발 지점이 하나 더 있었고, 위에 적어둔 근본 대책을 실제로 넣었다.** → TS-027
+
+- **재발**: `POST /groups/{id}/invitations`가 정확히 같은 형태였다 — 사전 `SELECT`로 `GROUP_INVITE_ALREADY_SENT`를 검사한 뒤 `INSERT`. 관리자 두 명이 같은 이메일을 동시에 초대하거나 한 명이 더블클릭하면 유니크 제약(`uq_group_invitations_group_email`)에서 진 쪽이 봉투 없는 500으로 터진다. 이번엔 `IntegrityError`를 잡아 **순차 실행이었다면 받았을 409 `GROUP_INVITE_ALREADY_SENT`** 로 답하게 했다. 새 에러 코드를 만들지 않고 기존 것을 재사용했다 — 경합 여부는 클라이언트가 알 필요가 없다.
+- **근본 대책 반영**: 범용 `Exception` 핸들러를 넣었다. 스택 트레이스와 내부 경로는 서버 로그에만 남기고 응답엔 `INTERNAL_ERROR`만 내려간다. `traceId`는 아직 없다 — 요청 단위 컨텍스트 전파(`contextvars`)가 필요해 별건으로 남긴다.
+- 그 과정에서 **핸들러가 애초에 404·405를 못 잡고 있었다**는 더 큰 구멍이 드러났다(TS-027). 이 항목이 "핸들러를 우회한다"고 쓴 것보다 실제 상황이 나빴던 셈이다.
 
 ### 배운 점
 
