@@ -77,7 +77,11 @@ export function SmartDashboardPanel() {
           )}
 
           {dueSoon.length > 0 && (
-            <Link href="/dashboard" className="block rounded-lg transition hover:bg-foreground/[0.04]">
+            <Link
+              href="/dashboard"
+              aria-label={`기한 주의 약속 ${dueSoon.length}건 전체 보기`}
+              className="block rounded-lg transition hover:bg-foreground/[0.04]"
+            >
               <h3 className="mb-2 text-xs font-bold text-foreground/70">기한 주의 {dueSoon.length}</h3>
               <ul className="space-y-2">
                 {dueSoon.slice(0, 5).map((c) => (
