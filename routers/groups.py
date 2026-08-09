@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from auth import get_current_user
@@ -222,8 +223,22 @@ def invite_to_group_by_email(
 
     # 가입자든 미가입자든 여기 하나로 모인다. 응답이 갈리면 임의 이메일의
     # 가입 여부를 알아낼 수 있다.
-    _upsert_invitation(db, group_id, email, current_user.id, accepted=False)
-    db.commit()
+    try:
+        _upsert_invitation(db, group_id, email, current_user.id, accepted=False)
+        db.commit()
+    except IntegrityError:
+        # 위의 ALREADY_SENT 검사와 이 삽입 사이는 원자적이지 않다. 같은 이메일
+        # 초대가 동시에 들어오면(관리자 두 명, 혹은 더블클릭) 둘 다 검사를
+        # 통과한 뒤 유니크 제약에서 한쪽이 진다. 순차 실행이었다면 진 쪽은
+        # 위 검사에 걸렸을 것이므로 같은 답을 준다 — 500으로 터뜨리지 않는다.
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "GROUP_INVITE_ALREADY_SENT",
+                "message": "이미 초대해 둔 이메일입니다.",
+            },
+        )
     return {
         "success": True,
         "data": {"status": "invited", "email": email},

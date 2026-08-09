@@ -31,12 +31,43 @@ export type MeResponse = {
 
 export type ListMeta = { total: number; limit: number; hasNext: boolean };
 
+export type ErrorDetail = { field: string | null; code: string };
+
 type Envelope<T> = {
   success: boolean;
   data: T;
-  error: { code: string; message: string } | null;
+  error: { code: string; message: string; details?: ErrorDetail[] } | null;
   meta?: ListMeta;
 };
+
+/** 봉투의 error.code를 살려서 던진다.
+ *
+ * 지금까지 request()가 message만 뽑아 `new Error(message)`로 던져 code를
+ * 버렸다. 그래서 프론트는 서버 문구를 문자열 비교할 수밖에 없었는데,
+ * api-contract.md는 message가 아니라 **code로 분기하라**고 못박는다 —
+ * 문구는 언제든 바뀌고 그때마다 분기가 조용히 깨지기 때문이다.
+ *
+ * Error를 상속하므로 기존 `err instanceof Error ? err.message : ...`
+ * 호출부는 하나도 고치지 않아도 그대로 동작한다. */
+export class ApiError extends Error {
+  readonly code: string;
+  readonly status: number;
+  /** 검증 실패(VALIDATION_FAILED)일 때 어느 필드가 왜 틀렸는지. */
+  readonly details: ErrorDetail[] | null;
+
+  constructor(
+    message: string,
+    code: string,
+    status: number,
+    details: ErrorDetail[] | null = null,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+    this.status = status;
+    this.details = details;
+  }
+}
 
 export type ActionItem = {
   content: string;
@@ -187,7 +218,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     const message = body?.error?.message || body?.detail || '요청이 실패했습니다.';
-    throw new Error(message);
+    // 봉투 밖 응답(리버스 프록시 오류 페이지 등)은 code가 없다. 그때만
+    // UNKNOWN으로 떨어지고, 우리 API는 이제 항상 code를 채워 보낸다.
+    throw new ApiError(
+      message,
+      body?.error?.code ?? 'UNKNOWN',
+      res.status,
+      body?.error?.details ?? null,
+    );
   }
 
   if (res.status === 204) return undefined as T;
@@ -226,7 +264,12 @@ async function postFile(path: string, file: File): Promise<SummaryResponse> {
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     const message = body?.error?.message || body?.detail || '요약 요청이 실패했습니다.';
-    throw new Error(message);
+    throw new ApiError(
+      message,
+      body?.error?.code ?? 'UNKNOWN',
+      res.status,
+      body?.error?.details ?? null,
+    );
   }
 
   return res.json();
