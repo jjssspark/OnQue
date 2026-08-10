@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useWorkspace } from '@/components/WorkspaceContext';
+import { AssistantPanel } from '@/components/AssistantPanel';
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
@@ -40,11 +41,12 @@ export function SmartDashboardPanel() {
   const { todos, schedules, loading, error, toggleTodo, removeTodo, removeSchedule,
           proposedCount, dueSoon, lastSyncedAt } = useWorkspace();
   const elapsed = useElapsedLabel(lastSyncedAt);
+  const [expanded, setExpanded] = useState(false);
   const openTodos = todos.filter((t) => !t.is_done);
   const doneTodos = todos.filter((t) => t.is_done);
 
   return (
-    <aside className="hidden w-[320px] shrink-0 flex-col overflow-y-auto border-l border-border bg-surface lg:flex xl:w-[360px]">
+    <aside className="hidden w-[320px] shrink-0 flex-col overflow-hidden border-l border-border bg-surface lg:flex xl:w-[360px]">
       <div className="border-b border-border px-5 py-5">
         <p className="font-mono text-xs uppercase tracking-widest text-brand">Smart Dashboard</p>
         <h2 className="mt-1 text-sm font-bold text-foreground">실시간 업무 현황</h2>
@@ -64,6 +66,24 @@ export function SmartDashboardPanel() {
         </p>
       )}
 
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="flex w-full items-center justify-between border-b border-border px-5 py-3 text-left transition hover:bg-foreground/[0.03]"
+      >
+        <span className="font-mono text-[10px] text-foreground/60">
+          할 일 {openTodos.length} · 일정 {schedules.length}
+          {(proposedCount > 0 || dueSoon.length > 0) &&
+            ` · 확인 필요 ${proposedCount} · 기한 주의 ${dueSoon.length}`}
+        </span>
+        <span className="font-mono text-[10px] text-foreground/40">
+          {expanded ? '접기' : '펼치기'}
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="max-h-[45vh] shrink-0 overflow-y-auto">
       {(proposedCount > 0 || dueSoon.length > 0) && (
         <section className="border-b border-border px-5 py-4">
           {proposedCount > 0 && (
@@ -162,6 +182,9 @@ export function SmartDashboardPanel() {
           ))}
         </ul>
       </section>
+        </div>
+      )}
+      <AssistantPanel />
     </aside>
   );
 }

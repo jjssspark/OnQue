@@ -41,7 +41,7 @@ def _make_room(db_session, group_id, message_count, created_by, name="A사 방")
     db_session.refresh(room)
     # 실제 방 생성 API(main.py의 create_chat_room)는 만든 사람을
     # ChatRoomMember로 함께 넣는다. 여기서도 그래야 room-membership 가시성
-    # 필터(routers/commitments.py._visible_commitment_filter) 아래에서
+    # 필터(commitment_service.visible_commitment_filter) 아래에서
     # created_by 본인이 자기가 만든 방에서 나온 약속을 못 보는 비현실적인
     # 상태가 되지 않는다.
     db_session.add(ChatRoomMember(room_id=room.id, user_id=created_by))

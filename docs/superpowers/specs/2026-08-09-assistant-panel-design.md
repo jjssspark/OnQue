@@ -69,7 +69,7 @@ Authorization: Bearer <token>
 ```
 
 - `message`: 1~2000자. 빈 문자열은 422
-- `history`: 클라이언트가 들고 다닌다. **서버는 최근 10턴만 쓰고 나머지는 조용히 버린다.** 초과를 422로 거절하지 않는다 — 사용자 잘못이 아니다
+- `history`: 클라이언트가 들고 다닌다. **서버는 최근 20개 메시지(사용자·비서 합쳐, 약 10왕복)만 쓰고 나머지는 조용히 버린다.** 초과를 422로 거절하지 않는다 — 사용자 잘못이 아니다. 단위는 "왕복"이 아니라 **배열 항목 개수**다
 - `group_id`: `require_group_member`로 검사. 미소속이면 403
 
 대화 기록을 서버에 두지 않으므로 **새 테이블도, 마이그레이션도, 보관 정책도 없다.**
@@ -159,11 +159,17 @@ proposed → confirmed → fulfilled
 
 정렬은 **약속·할 일은 `due_date` 오름차순(NULL은 뒤), 일정은 `scheduled_date` 오름차순**이다. 상한에 걸려 잘릴 때 급한 것부터 남아야 한다 — `created_at desc`로 자르면 마감 임박 건이 통째로 빠질 수 있다.
 
+NULL을 뒤로 보내는 건 `NULLS LAST`가 아니라 `func.coalesce(due_date, date(9999,12,31))`로 한다. SQLite가 `NULLS LAST`를 지원하지 않아 테스트에서만 순서가 달라진다.
+
+**일정은 `group_id`가 NULL인 것도 함께 읽는다.** 기존 `GET /schedules`(`main.py:504`)가 그렇게 동작해서 사용자 화면에 이미 섞여 보이고 있다. 비서가 화면과 다른 걸 보면 답이 어긋난다. 그룹 격리 테스트는 **다른 그룹의(NULL이 아닌) 일정**이 안 섞이는지를 단언한다.
+
 모델은 기존과 같은 `gemini-2.5-flash`(`gemini_service.py:25`)를 쓴다. 새 모델을 도입하지 않는다.
 
 `is_overdue`/`is_due_soon`은 `commitment_service.due_flags()`가 조회 시 계산하는 파생값이고 **`confirmed`일 때만 True가 될 수 있다**(`commitment_service.py:53-61`). `proposed`는 기한이 지나도 항상 False다. 프롬프트가 이 사실을 알아야 "확인 안 한 약속의 기한이 지났다"를 스스로 말할 수 있다 — 규칙에 명시한다.
 
 **이 조회는 `GET /api/v1/commitments`를 부르지 않고 DB를 직접 읽는다.** 그 엔드포인트는 `maybe_sweep`을 겸해서(`routers/commitments.py:197`) 비서에 말 걸 때마다 Gemini 스윕이 딸려 돌 수 있다.
+
+**약속의 가시성은 `group_id` 하나가 아니라 `group_id` + 채팅방 멤버십 2단이다.** 채팅방은 그룹 전원이 아니라 초대된 사람만 볼 수 있고(`main.py:588` `_require_room_access`), 스윕이 그룹의 모든 방을 훑어 `Commitment.evidence`에 대화 원문을 그대로 저장하기 때문에 비공개 방에서 나온 약속은 그 방 멤버가 아닌 그룹원에게 새면 안 된다. `GET /api/v1/commitments`는 이 규칙을 `commitment_service.visible_commitment_filter`로 적용하고, `build_context`도 (컨텍스트 구성 시) 같은 필터를 `user_id` 기준으로 걸어 화면에 안 보이는 약속이 프롬프트로 새지 않게 한다. `validate_actions`의 `commitment_status` 분기도 같은 함수(`commitment_service.is_commitment_visible`)로 대상 약속을 검사해, 안 보이는 약속을 지목한 액션은 카드를 만들지 않고 버린다 — 카드 라벨·payload에 실린 내용이 승인 전에 노출되는 걸 막기 위해서다.
 
 ## 프롬프트 규칙
 

@@ -191,6 +191,28 @@ export type CommitmentRecord = {
   created_at: string;
 };
 
+export type AssistantActionKind =
+  | 'todo_add'
+  | 'todo_done'
+  | 'todo_delete'
+  | 'schedule_add'
+  | 'schedule_delete'
+  | 'commitment_status';
+
+/** 서버가 검증을 마친 제안. payload는 kind마다 모양이 달라 실행 시점에 좁힌다. */
+export type AssistantAction = {
+  id: string;
+  risk: 'safe' | 'confirm';
+  kind: AssistantActionKind;
+  label: string;
+  warning: string | null;
+  payload: Record<string, unknown>;
+};
+
+export type AssistantTurn = { role: 'user' | 'assistant'; content: string };
+
+export type AssistantReply = { reply: string; actions: AssistantAction[] };
+
 export type AnnouncementRecord = {
   id: number;
   title: string;
@@ -316,6 +338,17 @@ export function deleteTodo(id: number): Promise<void> {
 
 export function getSchedules(groupId: number): Promise<ScheduleItem[]> {
   return request(`/schedules?group_id=${groupId}`);
+}
+
+export function createSchedule(
+  groupId: number,
+  title: string,
+  scheduledDate: string,
+): Promise<ScheduleItem> {
+  return request('/schedules', {
+    method: 'POST',
+    body: JSON.stringify({ group_id: groupId, title, scheduled_date: scheduledDate }),
+  });
 }
 
 export function deleteSchedule(id: number): Promise<void> {
@@ -521,5 +554,16 @@ export function bulkUpdateCommitments(
   return requestEnveloped<{ updated: number }>('/api/v1/commitments/bulk-status', {
     method: 'POST',
     body: JSON.stringify({ ids, status }),
+  });
+}
+
+export function sendAssistantMessage(
+  groupId: number,
+  message: string,
+  history: AssistantTurn[],
+): Promise<AssistantReply> {
+  return requestEnveloped<AssistantReply>('/api/v1/assistant/messages', {
+    method: 'POST',
+    body: JSON.stringify({ group_id: groupId, message, history }),
   });
 }
