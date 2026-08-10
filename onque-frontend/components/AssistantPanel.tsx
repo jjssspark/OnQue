@@ -17,12 +17,17 @@ export function AssistantPanel() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  // WorkspaceContext.tsx의 requestSeqRef와 같은 이유. 그룹을 바꾼 뒤 이전
+  // 그룹으로 보낸 요청의 응답이 뒤늦게 도착해 새 그룹 대화를 덮지 못하게 막는다.
+  const groupSeqRef = useRef(0);
 
   // 그룹을 바꾸면 이전 그룹 대화를 이어가지 않는다. 맥락이 섞이면 비서가
   // 지금 그룹에 없는 데이터를 참조한다.
   useEffect(() => {
+    groupSeqRef.current += 1;
     setMessages([]);
     setError(null);
+    setPending(false);
   }, [currentGroupId]);
 
   useEffect(() => {
@@ -32,6 +37,9 @@ export function AssistantPanel() {
   const send = useCallback(async () => {
     const text = draft.trim();
     if (!text || pending || currentGroupId === null) return;
+
+    const groupId = currentGroupId;
+    const seq = groupSeqRef.current;
 
     const history: AssistantTurn[] = messages.map((m) => ({
       role: m.role,
@@ -44,18 +52,20 @@ export function AssistantPanel() {
     setError(null);
 
     try {
-      const reply = await sendAssistantMessage(currentGroupId, text, history);
+      const reply = await sendAssistantMessage(groupId, text, history);
+      if (groupSeqRef.current !== seq) return; // 그룹이 바뀐 뒤 도착한 응답은 버린다
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: reply.reply, actions: reply.actions },
       ]);
     } catch (err) {
+      if (groupSeqRef.current !== seq) return; // 그룹이 바뀐 뒤 도착한 실패도 새 그룹에 반영하지 않는다
       // 친 문장을 입력창에 되돌려 놓는다. 날리면 다시 타이핑해야 한다.
       setDraft(text);
       setMessages((prev) => prev.slice(0, -1));
       setError(err instanceof Error ? err.message : '비서가 응답하지 못했습니다.');
     } finally {
-      setPending(false);
+      if (groupSeqRef.current === seq) setPending(false);
     }
   }, [draft, pending, currentGroupId, messages]);
 
