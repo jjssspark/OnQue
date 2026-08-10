@@ -83,7 +83,7 @@ export function SmartDashboardPanel() {
       </button>
 
       {expanded && (
-        <div className="max-h-[45%] shrink-0 overflow-y-auto">
+        <div className="max-h-[45vh] shrink-0 overflow-y-auto">
       {(proposedCount > 0 || dueSoon.length > 0) && (
         <section className="border-b border-border px-5 py-4">
           {proposedCount > 0 && (
