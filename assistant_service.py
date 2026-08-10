@@ -4,6 +4,7 @@
 맡는다. 그래야 컨텍스트 수집을 모델 없이 테스트할 수 있다.
 """
 
+import uuid
 from datetime import date
 
 from sqlalchemy import func, or_, select
@@ -139,3 +140,114 @@ def render_context(context: dict) -> str:
 
     lines += ["", "[클라이언트]", ", ".join(context["clients"]) or "(없음)"]
     return "\n".join(lines)
+
+
+# 되돌릴 수 있는 것만 즉시 실행한다.
+_SAFE_KINDS = frozenset({"todo_add", "todo_done", "schedule_add"})
+# 삭제와 약속 전이는 승인을 받는다. 약속 전이는 _ALLOWED_TRANSITIONS에
+# 역방향이 없어 한 번 넘어가면 앱 안에서 되돌릴 수 없다.
+_CONFIRM_KINDS = frozenset({"todo_delete", "schedule_delete", "commitment_status"})
+
+_STATUS_LABELS = {
+    "confirmed": "확정",
+    "fulfilled": "이행 완료",
+    "dismissed": "무시",
+}
+
+
+def validate_actions(
+    db: Session, group_id: int, raw_actions: list[dict]
+) -> tuple[list[dict], int]:
+    """모델이 낸 액션을 검증한다. (통과한 액션, 버린 개수)를 돌려준다.
+
+    이 함수는 DB에 쓰지 않는다. 실행은 프론트가 기존 엔드포인트로 한다.
+    """
+    validated: list[dict] = []
+    dropped = 0
+
+    for raw in raw_actions or []:
+        built = _build_action(db, group_id, raw if isinstance(raw, dict) else {})
+        if built is None:
+            dropped += 1
+            continue
+        validated.append(built)
+
+    return validated, dropped
+
+
+def _action(kind: str, label: str, payload: dict, warning: str | None = None) -> dict:
+    return {
+        "id": uuid.uuid4().hex[:8],
+        "risk": "safe" if kind in _SAFE_KINDS else "confirm",
+        "kind": kind,
+        "label": label,
+        "warning": warning,
+        "payload": payload,
+    }
+
+
+def _build_action(db: Session, group_id: int, raw: dict) -> dict | None:
+    kind = raw.get("kind")
+    if kind not in _SAFE_KINDS | _CONFIRM_KINDS:
+        return None
+
+    if kind == "todo_add":
+        content = (raw.get("content") or "").strip()
+        if not content:
+            return None
+        due = (raw.get("due_date") or "").strip() or None
+        return _action(kind, f"할 일 추가: {content}", {"content": content, "due_date": due})
+
+    if kind == "schedule_add":
+        title = (raw.get("title") or "").strip()
+        when = (raw.get("scheduled_date") or "").strip()
+        if not title or not when:
+            return None
+        return _action(kind, f"일정 추가: {title} ({when})",
+                       {"title": title, "scheduled_date": when})
+
+    if kind in ("todo_done", "todo_delete"):
+        todo = db.get(Todo, raw.get("todo_id") or 0)
+        if todo is None or todo.group_id != group_id:
+            return None
+        if kind == "todo_done":
+            return _action(kind, f"할 일 완료: {todo.content}",
+                           {"todo_id": todo.id, "content": todo.content})
+        return _action(kind, f"할 일 삭제: {todo.content}",
+                       {"todo_id": todo.id, "content": todo.content},
+                       warning="지운 할 일은 복구되지 않습니다")
+
+    if kind == "schedule_delete":
+        schedule = db.get(Schedule, raw.get("schedule_id") or 0)
+        if schedule is None or schedule.group_id != group_id:
+            return None
+        return _action(kind, f"일정 삭제: {schedule.title}",
+                       {"schedule_id": schedule.id, "title": schedule.title},
+                       warning="지운 일정은 복구되지 않습니다")
+
+    # commitment_status
+    commitment = db.get(Commitment, raw.get("commitment_id") or 0)
+    if commitment is None or commitment.group_id != group_id:
+        return None
+    target = raw.get("to_status")
+    # 통과시키면 사용자가 승인을 눌렀을 때 409를 본다 — 자기 잘못이 아닌 실패다.
+    if not commitment_service.can_transition(commitment.status, target):
+        return None
+
+    client_name = None
+    if commitment.client_id is not None:
+        client = db.get(Client, commitment.client_id)
+        client_name = client.name if client else None
+
+    return _action(
+        "commitment_status",
+        f"약속을 {_STATUS_LABELS[target]}(으)로 바꿀까요?",
+        {
+            "commitment_id": commitment.id,
+            "content": commitment.content,
+            "client_name": client_name,
+            "from_status": commitment.status,
+            "to_status": target,
+        },
+        warning=f"{_STATUS_LABELS[target]} 처리는 되돌릴 수 없습니다",
+    )
