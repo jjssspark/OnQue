@@ -169,6 +169,8 @@ NULL을 뒤로 보내는 건 `NULLS LAST`가 아니라 `func.coalesce(due_date, 
 
 **이 조회는 `GET /api/v1/commitments`를 부르지 않고 DB를 직접 읽는다.** 그 엔드포인트는 `maybe_sweep`을 겸해서(`routers/commitments.py:197`) 비서에 말 걸 때마다 Gemini 스윕이 딸려 돌 수 있다.
 
+**약속의 가시성은 `group_id` 하나가 아니라 `group_id` + 채팅방 멤버십 2단이다.** 채팅방은 그룹 전원이 아니라 초대된 사람만 볼 수 있고(`main.py:588` `_require_room_access`), 스윕이 그룹의 모든 방을 훑어 `Commitment.evidence`에 대화 원문을 그대로 저장하기 때문에 비공개 방에서 나온 약속은 그 방 멤버가 아닌 그룹원에게 새면 안 된다. `GET /api/v1/commitments`는 이 규칙을 `commitment_service.visible_commitment_filter`로 적용하고, `build_context`도 (컨텍스트 구성 시) 같은 필터를 `user_id` 기준으로 걸어 화면에 안 보이는 약속이 프롬프트로 새지 않게 한다. `validate_actions`의 `commitment_status` 분기도 같은 함수(`commitment_service.is_commitment_visible`)로 대상 약속을 검사해, 안 보이는 약속을 지목한 액션은 카드를 만들지 않고 버린다 — 카드 라벨·payload에 실린 내용이 승인 전에 노출되는 걸 막기 위해서다.
+
 ## 프롬프트 규칙
 
 - **주어진 데이터에만 근거해 답한다. 없으면 "그 정보는 없습니다"라고 말한다. 지어내지 않는다**

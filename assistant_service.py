@@ -25,26 +25,31 @@ HISTORY_MESSAGE_LIMIT = 20
 _FAR_FUTURE = date(9999, 12, 31)
 
 
-def build_context(db: Session, group_id: int) -> dict:
+def build_context(db: Session, group_id: int, user_id: int) -> dict:
     today = commitment_service.today_kst()
     return {
         "today": today.isoformat(),
-        "commitments": _commitments(db, group_id, today),
+        "commitments": _commitments(db, group_id, user_id, today),
         "todos": _todos(db, group_id),
         "schedules": _schedules(db, group_id, today),
         "clients": _clients(db, group_id),
     }
 
 
-def _commitments(db: Session, group_id: int, today: date) -> list[dict]:
+def _commitments(db: Session, group_id: int, user_id: int, today: date) -> list[dict]:
     # status별로 각각 상한을 둔다. 한 덩어리로 자르면 proposed가 많은 팀에서
     # confirmed가 통째로 밀려난다.
+    #
+    # 그룹 소속만으로는 부족하다 — 이 저장소의 가시성은 group_id + 채팅방
+    # 멤버십 2단이다(commitment_service.visible_commitment_filter). 여기서
+    # 빠뜨리면 비공개 방에서 나온 약속 원문이 비멤버에게도 프롬프트로 샌다.
     rows: list[dict] = []
     for status in ("proposed", "confirmed"):
         stmt = (
             select(Commitment, Client.name)
             .join(Client, Client.id == Commitment.client_id, isouter=True)
             .where(Commitment.group_id == group_id, Commitment.status == status)
+            .where(commitment_service.visible_commitment_filter(user_id))
             .order_by(
                 func.coalesce(Commitment.due_date, _FAR_FUTURE).asc(),
                 Commitment.id.asc(),
@@ -156,7 +161,7 @@ _STATUS_LABELS = {
 
 
 def validate_actions(
-    db: Session, group_id: int, raw_actions: list[dict]
+    db: Session, group_id: int, raw_actions: list[dict], user_id: int
 ) -> tuple[list[dict], int]:
     """모델이 낸 액션을 검증한다. (통과한 액션, 버린 개수)를 돌려준다.
 
@@ -166,7 +171,7 @@ def validate_actions(
     dropped = 0
 
     for raw in raw_actions or []:
-        built = _build_action(db, group_id, raw if isinstance(raw, dict) else {})
+        built = _build_action(db, group_id, user_id, raw if isinstance(raw, dict) else {})
         if built is None:
             dropped += 1
             continue
@@ -186,7 +191,7 @@ def _action(kind: str, label: str, payload: dict, warning: str | None = None) ->
     }
 
 
-def _build_action(db: Session, group_id: int, raw: dict) -> dict | None:
+def _build_action(db: Session, group_id: int, user_id: int, raw: dict) -> dict | None:
     kind = raw.get("kind")
     if kind not in _SAFE_KINDS | _CONFIRM_KINDS:
         return None
@@ -228,6 +233,12 @@ def _build_action(db: Session, group_id: int, raw: dict) -> dict | None:
     # commitment_status
     commitment = db.get(Commitment, raw.get("commitment_id") or 0)
     if commitment is None or commitment.group_id != group_id:
+        return None
+    # 그룹 소속만으로는 부족하다 — 비공개 채팅방 출처 약속은 방 멤버가 아니면
+    # 안 보인다(commitment_service.is_commitment_visible). 여기서 빠뜨리면
+    # 카드 라벨·payload에 content·client_name이 그대로 렌더돼 승인 전에
+    # 이미 노출된다.
+    if not commitment_service.is_commitment_visible(db, user_id, commitment):
         return None
     target = raw.get("to_status")
     # 통과시키면 사용자가 승인을 눌렀을 때 409를 본다 — 자기 잘못이 아닌 실패다.

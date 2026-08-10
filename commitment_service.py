@@ -11,7 +11,15 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 import gemini_service
-from models import ChatMessage, ChatRoom, Client, Commitment, Group, COMMITMENT_STATUSES
+from models import (
+    ChatMessage,
+    ChatRoom,
+    ChatRoomMember,
+    Client,
+    Commitment,
+    Group,
+    COMMITMENT_STATUSES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +47,41 @@ def apply_status(commitment: Commitment, target: str) -> None:
     commitment.status = target
     if target == "confirmed" and commitment.confirmed_at is None:
         commitment.confirmed_at = datetime.now(timezone.utc)
+
+
+def visible_commitment_filter(user_id: int):
+    """채팅방은 그룹 전원이 아니라 초대된 사람만 볼 수 있다(main.py:588
+    _require_room_access와 같은 규칙). 스윕은 그룹의 모든 방을 훑어
+    Commitment.evidence에 원문을 그대로 저장하므로, 조회 시점에 방 멤버십으로
+    걸러야 비공개 방의 대화가 그룹 전원에게 새지 않는다.
+
+    call/document 출처는 방 개념이 없으므로 그대로 통과시킨다. 채팅 출처는
+    create_commitments 시점에 항상 room_id를 채워 저장하므로, room_id가
+    NULL이라는 건 그 방이 나중에 삭제됐다는 뜻뿐이다(main.py의
+    _delete_room_cascade가 삭제 시 NULL로 만든다) — 검사할 멤버십이 더는
+    없으므로 그룹 공개로 승격시킨다. 조용히 영구 은닉되는 것보다 낫다고
+    판단한 트레이드오프다.
+
+    routers/commitments.py(목록 조회)와 assistant_service.py(비서 컨텍스트)가
+    함께 쓴다 — 두 벌로 유지하면 한쪽만 고쳤을 때 조용히 어긋난다.
+    """
+    allowed_rooms = select(ChatRoomMember.room_id).where(ChatRoomMember.user_id == user_id)
+    return or_(
+        Commitment.source_type != "chat",
+        Commitment.room_id.is_(None),
+        Commitment.room_id.in_(allowed_rooms),
+    )
+
+
+def is_commitment_visible(db: Session, user_id: int, commitment: Commitment) -> bool:
+    """단건(PATCH)·소수건(bulk) 판정용. 목록 필터(visible_commitment_filter)와
+    같은 규칙을 단일 레코드에 적용한다. assistant_service의 액션 검증도 같은
+    규칙을 쓴다 — 안 보이는 약속을 지목한 commitment_status 액션을 걸러낸다."""
+    if commitment.source_type != "chat":
+        return True
+    if commitment.room_id is None:
+        return True
+    return db.get(ChatRoomMember, {"room_id": commitment.room_id, "user_id": user_id}) is not None
 
 
 def today_kst() -> date:

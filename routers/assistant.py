@@ -42,7 +42,7 @@ def send_assistant_message(
     """
     require_group_member(current_user, body.group_id, db)
 
-    context = assistant_service.build_context(db, body.group_id)
+    context = assistant_service.build_context(db, body.group_id, current_user.id)
     # 상한 초과를 422로 거절하지 않는다. 대화가 길어진 건 사용자 잘못이 아니다.
     history = [t.model_dump() for t in body.history][-assistant_service.HISTORY_MESSAGE_LIMIT:]
 
@@ -59,7 +59,7 @@ def send_assistant_message(
         )
 
     actions, dropped = assistant_service.validate_actions(
-        db, body.group_id, answer["actions"]
+        db, body.group_id, answer["actions"], current_user.id
     )
     reply = answer["reply"]
     if dropped:

@@ -5,7 +5,7 @@
 """
 
 import assistant_service
-from models import Commitment, Group, GroupMembership, Schedule, Todo, User
+from models import ChatRoom, ChatRoomMember, Commitment, Group, GroupMembership, Schedule, Todo, User
 
 
 def _seed_group(db, name):
@@ -17,7 +17,7 @@ def _seed_group(db, name):
     db.flush()
     db.add(GroupMembership(user_id=user.id, group_id=group.id, role="admin"))
     db.flush()
-    return group
+    return user, group
 
 
 def _commitment(db, group_id, content, status="confirmed"):
@@ -31,12 +31,13 @@ def _commitment(db, group_id, content, status="confirmed"):
 
 
 def test_add_actions_are_safe(db_session):
-    group = _seed_group(db_session, "A팀")
+    user, group = _seed_group(db_session, "A팀")
     db_session.commit()
 
     actions, dropped = assistant_service.validate_actions(
         db_session, group.id,
         [{"kind": "todo_add", "content": "시안 정리", "due_date": "2026-08-20"}],
+        user.id,
     )
 
     assert dropped == 0
@@ -47,7 +48,7 @@ def test_add_actions_are_safe(db_session):
 
 
 def test_delete_and_status_actions_need_confirmation(db_session):
-    group = _seed_group(db_session, "A팀")
+    user, group = _seed_group(db_session, "A팀")
     todo = Todo(group_id=group.id, content="지울 일")
     db_session.add(todo)
     commitment = _commitment(db_session, group.id, "완료할 약속")
@@ -59,6 +60,7 @@ def test_delete_and_status_actions_need_confirmation(db_session):
             {"kind": "todo_delete", "todo_id": todo.id},
             {"kind": "commitment_status", "commitment_id": commitment.id, "to_status": "fulfilled"},
         ],
+        user.id,
     )
 
     assert dropped == 0
@@ -68,24 +70,24 @@ def test_delete_and_status_actions_need_confirmation(db_session):
 
 
 def test_todo_done_is_safe_because_it_toggles_back(db_session):
-    group = _seed_group(db_session, "A팀")
+    user, group = _seed_group(db_session, "A팀")
     todo = Todo(group_id=group.id, content="끝낼 일")
     db_session.add(todo)
     db_session.commit()
 
     actions, _ = assistant_service.validate_actions(
-        db_session, group.id, [{"kind": "todo_done", "todo_id": todo.id}]
+        db_session, group.id, [{"kind": "todo_done", "todo_id": todo.id}], user.id
     )
 
     assert actions[0]["risk"] == "safe"
 
 
 def test_unknown_id_is_dropped(db_session):
-    group = _seed_group(db_session, "A팀")
+    user, group = _seed_group(db_session, "A팀")
     db_session.commit()
 
     actions, dropped = assistant_service.validate_actions(
-        db_session, group.id, [{"kind": "todo_delete", "todo_id": 99999}]
+        db_session, group.id, [{"kind": "todo_delete", "todo_id": 99999}], user.id
     )
 
     assert actions == []
@@ -94,8 +96,8 @@ def test_unknown_id_is_dropped(db_session):
 
 def test_other_groups_id_is_dropped(db_session):
     """타 그룹 id를 지목하면 버린다 — 통과시키면 남의 데이터를 지운다."""
-    group_a = _seed_group(db_session, "A팀")
-    group_b = _seed_group(db_session, "B팀")
+    user_a, group_a = _seed_group(db_session, "A팀")
+    _, group_b = _seed_group(db_session, "B팀")
     foreign = _commitment(db_session, group_b.id, "B팀 약속")
     foreign_todo = Todo(group_id=group_b.id, content="B팀 할 일")
     db_session.add(foreign_todo)
@@ -107,6 +109,7 @@ def test_other_groups_id_is_dropped(db_session):
             {"kind": "commitment_status", "commitment_id": foreign.id, "to_status": "fulfilled"},
             {"kind": "todo_delete", "todo_id": foreign_todo.id},
         ],
+        user_a.id,
     )
 
     assert actions == []
@@ -115,13 +118,14 @@ def test_other_groups_id_is_dropped(db_session):
 
 def test_illegal_transition_is_dropped(db_session):
     """proposed -> fulfilled 는 _ALLOWED_TRANSITIONS에 없다."""
-    group = _seed_group(db_session, "A팀")
+    user, group = _seed_group(db_session, "A팀")
     commitment = _commitment(db_session, group.id, "미확인 약속", status="proposed")
     db_session.commit()
 
     actions, dropped = assistant_service.validate_actions(
         db_session, group.id,
         [{"kind": "commitment_status", "commitment_id": commitment.id, "to_status": "fulfilled"}],
+        user.id,
     )
 
     assert actions == []
@@ -129,11 +133,11 @@ def test_illegal_transition_is_dropped(db_session):
 
 
 def test_unknown_kind_is_dropped(db_session):
-    group = _seed_group(db_session, "A팀")
+    user, group = _seed_group(db_session, "A팀")
     db_session.commit()
 
     actions, dropped = assistant_service.validate_actions(
-        db_session, group.id, [{"kind": "drop_database"}]
+        db_session, group.id, [{"kind": "drop_database"}], user.id
     )
 
     assert actions == []
@@ -141,12 +145,13 @@ def test_unknown_kind_is_dropped(db_session):
 
 
 def test_add_action_without_content_is_dropped(db_session):
-    group = _seed_group(db_session, "A팀")
+    user, group = _seed_group(db_session, "A팀")
     db_session.commit()
 
     actions, dropped = assistant_service.validate_actions(
         db_session, group.id,
         [{"kind": "todo_add", "content": "   "}, {"kind": "schedule_add", "title": "회의"}],
+        user.id,
     )
 
     # 내용이 빈 할 일, 날짜 없는 일정 둘 다 버린다.
@@ -155,13 +160,58 @@ def test_add_action_without_content_is_dropped(db_session):
 
 
 def test_validation_does_not_write_to_db(db_session):
-    group = _seed_group(db_session, "A팀")
+    user, group = _seed_group(db_session, "A팀")
     todo = Todo(group_id=group.id, content="그대로 남을 일")
     db_session.add(todo)
     db_session.commit()
 
     assistant_service.validate_actions(
-        db_session, group.id, [{"kind": "todo_delete", "todo_id": todo.id}]
+        db_session, group.id, [{"kind": "todo_delete", "todo_id": todo.id}], user.id
     )
 
     assert db_session.get(Todo, todo.id) is not None
+
+
+def test_commitment_status_action_on_hidden_commitment_is_dropped(db_session):
+    """C1: 비공개 방 출처 약속을 지목한 commitment_status 액션은, 그 방 멤버가
+    아닌 사용자에게는 카드를 만들지 않고 dropped 처리해야 한다. 그대로 카드를
+    만들면 라벨·payload에 content·client_name이 노출된 뒤에야 실행 시점(bulk-status)
+    403으로 막힌다 — 노출은 이미 끝난 뒤라 너무 늦다."""
+    owner, group = _seed_group(db_session, "A팀")
+    outsider = User(email="outsider2@onque.dev", password_hash="x", name="외부인2")
+    db_session.add(outsider)
+    db_session.flush()
+    db_session.add(GroupMembership(user_id=outsider.id, group_id=group.id, role="member"))
+
+    room = ChatRoom(group_id=group.id, name="비공개 방", created_by=owner.id)
+    db_session.add(room)
+    db_session.flush()
+    db_session.add(ChatRoomMember(room_id=room.id, user_id=owner.id))
+    db_session.flush()
+
+    hidden = Commitment(
+        group_id=group.id,
+        content="비공개 약속",
+        status="confirmed",
+        source_type="chat",
+        room_id=room.id,
+        evidence="비공개 원문",
+    )
+    db_session.add(hidden)
+    db_session.commit()
+
+    outsider_actions, outsider_dropped = assistant_service.validate_actions(
+        db_session, group.id,
+        [{"kind": "commitment_status", "commitment_id": hidden.id, "to_status": "fulfilled"}],
+        outsider.id,
+    )
+    assert outsider_actions == []
+    assert outsider_dropped == 1
+
+    owner_actions, owner_dropped = assistant_service.validate_actions(
+        db_session, group.id,
+        [{"kind": "commitment_status", "commitment_id": hidden.id, "to_status": "fulfilled"}],
+        owner.id,
+    )
+    assert owner_dropped == 0
+    assert owner_actions[0]["payload"]["commitment_id"] == hidden.id
