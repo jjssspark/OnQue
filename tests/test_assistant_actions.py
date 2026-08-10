@@ -172,6 +172,23 @@ def test_validation_does_not_write_to_db(db_session):
     assert db_session.get(Todo, todo.id) is not None
 
 
+def test_action_beyond_max_is_dropped(db_session):
+    """모델이 할 일 수십 건에 한꺼번에 안전 액션을 내도, 프론트가 순차 자동
+    실행하는 건 MAX_ACTIONS(10)개까지만이어야 한다. 초과분은 dropped로 잡힌다."""
+    user, group = _seed_group(db_session, "A팀")
+    todos = [Todo(group_id=group.id, content=f"할 일 {i}") for i in range(12)]
+    db_session.add_all(todos)
+    db_session.commit()
+
+    raw_actions = [{"kind": "todo_done", "todo_id": t.id} for t in todos]
+    actions, dropped = assistant_service.validate_actions(
+        db_session, group.id, raw_actions, user.id
+    )
+
+    assert len(actions) == assistant_service.MAX_ACTIONS
+    assert dropped == len(todos) - assistant_service.MAX_ACTIONS
+
+
 def test_commitment_status_action_on_hidden_commitment_is_dropped(db_session):
     """C1: 비공개 방 출처 약속을 지목한 commitment_status 액션은, 그 방 멤버가
     아닌 사용자에게는 카드를 만들지 않고 dropped 처리해야 한다. 그대로 카드를

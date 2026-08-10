@@ -19,13 +19,16 @@ logger = logging.getLogger(__name__)
 
 class HistoryTurn(BaseModel):
     role: Literal["user", "assistant"]
-    content: str
+    content: str = Field(max_length=2000)
 
 
 class AssistantMessageBody(BaseModel):
     group_id: int
     message: str = Field(min_length=1, max_length=2000)
-    history: list[HistoryTurn] = Field(default_factory=list)
+    # 항목 수 상한(100)은 명백한 남용만 막는 안전망이다. 실제 프롬프트에 실리는
+    # 개수는 여전히 HISTORY_MESSAGE_LIMIT([-20:] 슬라이스)로 정해진다 — 상한
+    # 초과를 422로 거절하지 않는다는 원칙은 그대로 유지한다.
+    history: list[HistoryTurn] = Field(default_factory=list, max_length=100)
 
 
 @router.post("/assistant/messages")

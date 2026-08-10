@@ -113,6 +113,13 @@ def _clients(db: Session, group_id: int) -> list[str]:
     return list(db.execute(stmt).scalars().all())
 
 
+def _flatten(text: str) -> str:
+    """개행을 공백으로 바꾼다. DB에서 온 텍스트(할 일·약속·클라이언트명 등)에
+    개행과 "[질문]" 같은 구획 표시가 섞이면 프롬프트 구조를 흉내 내 모델을
+    속일 수 있다 — 한 줄로 눌러 그 여지를 없앤다."""
+    return " ".join(text.splitlines())
+
+
 def render_context(context: dict) -> str:
     """프롬프트에 실을 평문. id를 함께 적는 것이 핵심이다 —
     모델이 문자열로 대상을 짐작하는 대신 id를 지목하게 만든다."""
@@ -125,8 +132,9 @@ def render_context(context: dict) -> str:
             flags.append("기한초과")
         if c["is_due_soon"]:
             flags.append("마감임박")
+        client_name = _flatten(c["client_name"]) if c["client_name"] else "미지정"
         lines.append(
-            f"- id={c['id']} | {c['content']} | 고객사={c['client_name'] or '미지정'}"
+            f"- id={c['id']} | {_flatten(c['content'])} | 고객사={client_name}"
             f" | 기한={c['due_date'] or '없음'} | 상태={c['status']}"
             f" | 출처={c['source_type']}" + (f" | {','.join(flags)}" if flags else "")
         )
@@ -135,15 +143,15 @@ def render_context(context: dict) -> str:
     if not context["todos"]:
         lines.append("(없음)")
     for t in context["todos"]:
-        lines.append(f"- id={t['id']} | {t['content']} | 기한={t['due_date'] or '없음'}")
+        lines.append(f"- id={t['id']} | {_flatten(t['content'])} | 기한={t['due_date'] or '없음'}")
 
     lines += ["", "[일정]"]
     if not context["schedules"]:
         lines.append("(없음)")
     for s in context["schedules"]:
-        lines.append(f"- id={s['id']} | {s['title']} | {s['scheduled_date']}")
+        lines.append(f"- id={s['id']} | {_flatten(s['title'])} | {s['scheduled_date']}")
 
-    lines += ["", "[클라이언트]", ", ".join(context["clients"]) or "(없음)"]
+    lines += ["", "[클라이언트]", ", ".join(_flatten(n) for n in context["clients"]) or "(없음)"]
     return "\n".join(lines)
 
 
@@ -152,6 +160,12 @@ _SAFE_KINDS = frozenset({"todo_add", "todo_done", "schedule_add"})
 # 삭제와 약속 전이는 승인을 받는다. 약속 전이는 _ALLOWED_TRANSITIONS에
 # 역방향이 없어 한 번 넘어가면 앱 안에서 되돌릴 수 없다.
 _CONFIRM_KINDS = frozenset({"todo_delete", "schedule_delete", "commitment_status"})
+
+# 통과 액션 상한. 프론트가 safe 액션을 순차 자동 실행하므로, 모델이 할 일 수십
+# 건에 한꺼번에 액션을 내면 클릭 없이 그만큼의 쓰기가 나간다. 초과분은 dropped로
+# 합산한다. gemini_service._ASSISTANT_RESPONSE_SCHEMA의 actions maxItems와 값을
+# 맞춘다 — 순환 import를 피하려 상수 자체는 공유하지 않는다.
+MAX_ACTIONS = 10
 
 _STATUS_LABELS = {
     "confirmed": "확정",
@@ -173,6 +187,9 @@ def validate_actions(
     for raw in raw_actions or []:
         built = _build_action(db, group_id, user_id, raw if isinstance(raw, dict) else {})
         if built is None:
+            dropped += 1
+            continue
+        if len(validated) >= MAX_ACTIONS:
             dropped += 1
             continue
         validated.append(built)
