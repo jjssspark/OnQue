@@ -3,15 +3,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { sendAssistantMessage, type AssistantAction, type AssistantTurn } from '@/lib/api';
 import { useWorkspace } from '@/components/WorkspaceContext';
+import { AssistantActionCard, applySafeAction } from '@/components/AssistantActionCard';
 
 type Message = {
   role: 'user' | 'assistant';
   content: string;
   actions: AssistantAction[];
+  /** safe 액션을 응답 직후 실행하며 만들어진 id. 취소할 때 쓴다. */
+  createdIds: Record<string, number | null>;
+  /** 응답 직후 실행이 실패한 safe 액션 id 목록. 카드 초기 상태를 'failed'로 준다. */
+  failedIds: string[];
 };
 
 export function AssistantPanel() {
-  const { currentGroupId } = useWorkspace();
+  const { currentGroupId, refresh } = useWorkspace();
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState(false);
@@ -46,7 +51,10 @@ export function AssistantPanel() {
       content: m.content,
     }));
 
-    setMessages((prev) => [...prev, { role: 'user', content: text, actions: [] }]);
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', content: text, actions: [], createdIds: {}, failedIds: [] },
+    ]);
     setDraft('');
     setPending(true);
     setError(null);
@@ -54,9 +62,26 @@ export function AssistantPanel() {
     try {
       const reply = await sendAssistantMessage(groupId, text, history);
       if (groupSeqRef.current !== seq) return; // 그룹이 바뀐 뒤 도착한 응답은 버린다
+
+      // safe 액션은 물어보지 않고 바로 실행한다. 되돌릴 수 있는 것만 여기 온다.
+      const createdIds: Record<string, number | null> = {};
+      const failedIds: string[] = [];
+      for (const action of reply.actions) {
+        if (action.risk !== 'safe') continue;
+        try {
+          createdIds[action.id] = await applySafeAction(action, groupId);
+        } catch {
+          // 실패해도 대화는 이어간다. 카드가 '다시 시도'를 보여준다.
+          failedIds.push(action.id);
+        }
+      }
+      // 실행 루프 동안 그룹이 바뀌었으면 이 응답을 새 그룹 대화에 반영하지 않는다.
+      if (groupSeqRef.current !== seq) return;
+      if (reply.actions.some((a) => a.risk === 'safe')) refresh();
+
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: reply.reply, actions: reply.actions },
+        { role: 'assistant', content: reply.reply, actions: reply.actions, createdIds, failedIds },
       ]);
     } catch (err) {
       if (groupSeqRef.current !== seq) return; // 그룹이 바뀐 뒤 도착한 실패도 새 그룹에 반영하지 않는다
@@ -67,7 +92,7 @@ export function AssistantPanel() {
     } finally {
       if (groupSeqRef.current === seq) setPending(false);
     }
-  }, [draft, pending, currentGroupId, messages]);
+  }, [draft, pending, currentGroupId, messages, refresh]);
 
   if (currentGroupId === null) return null;
 
@@ -91,6 +116,21 @@ export function AssistantPanel() {
             >
               {m.content}
             </p>
+
+            {m.actions.length > 0 && (
+              <div className="mt-2 space-y-2 text-left">
+                {m.actions.map((a) => (
+                  <AssistantActionCard
+                    key={a.id}
+                    action={a}
+                    groupId={currentGroupId}
+                    createdId={m.createdIds[a.id] ?? null}
+                    failed={m.failedIds.includes(a.id)}
+                    onChanged={refresh}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         ))}
 
