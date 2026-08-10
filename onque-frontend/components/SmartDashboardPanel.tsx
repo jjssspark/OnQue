@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useWorkspace } from '@/components/WorkspaceContext';
+import { AssistantPanel } from '@/components/AssistantPanel';
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
@@ -162,6 +163,7 @@ export function SmartDashboardPanel() {
           ))}
         </ul>
       </section>
+      <AssistantPanel />
     </aside>
   );
 }
