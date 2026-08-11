@@ -83,8 +83,17 @@ export function SmartDashboardPanel() {
         </span>
       </button>
 
-      {expanded && (
-        <div id="smart-dashboard-lists" className="max-h-[45vh] shrink-0 overflow-y-auto">
+      {/* 껍데기는 항상 렌더한다. 접었을 때 통째로 없애면 위 버튼의
+          aria-controls가 없는 id를 가리켜, 정작 "이 버튼이 뭘 펼치는가"를
+          알아야 할 접힌 상태에서 참조가 끊긴다. 안쪽 목록은 그대로 조건부라
+          접혀 있는 동안 항목 200개를 만들지는 않는다. */}
+      <div
+        id="smart-dashboard-lists"
+        hidden={!expanded}
+        className="max-h-[45vh] shrink-0 overflow-y-auto"
+      >
+        {expanded && (
+          <>
       {(proposedCount > 0 || dueSoon.length > 0) && (
         <section className="border-b border-border px-5 py-4">
           {proposedCount > 0 && (
@@ -183,8 +192,9 @@ export function SmartDashboardPanel() {
           ))}
         </ul>
       </section>
-        </div>
-      )}
+          </>
+        )}
+      </div>
       <AssistantPanel />
     </aside>
   );

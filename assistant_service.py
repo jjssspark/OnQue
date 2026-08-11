@@ -19,6 +19,9 @@ from models import Client, Commitment, Schedule, Todo
 CONTEXT_COMMITMENT_LIMIT = 100
 CONTEXT_TODO_LIMIT = 50
 CONTEXT_SCHEDULE_LIMIT = 30
+# 항목 하나가 차지할 수 있는 최대 길이. 개수만 막으면 5000자짜리 할 일 하나가
+# 그대로 실린다. 200자면 할 일·약속 한 줄 요약을 자르지 않으면서 이상치만 막는다.
+CONTEXT_TEXT_LIMIT = 200
 # 사용자·비서 메시지를 합쳐 배열 항목 20개(약 10왕복).
 HISTORY_MESSAGE_LIMIT = 20
 
@@ -112,12 +115,6 @@ def _schedules(db: Session, group_id: int, today: date) -> list[dict]:
 def _clients(db: Session, group_id: int) -> list[str]:
     stmt = select(Client.name).where(Client.group_id == group_id).order_by(Client.name.asc())
     return list(db.execute(stmt).scalars().all())
-
-
-# 항목 하나가 프롬프트에서 차지할 수 있는 최대 길이. 상한이 없으면 5000자짜리
-# 할 일 하나가 그대로 실린다 — 토큰이 곧 비용이고 Gemini 무료 티어에 분당 한도가
-# 있다. 200자면 할 일·약속 한 줄 요약을 자르지 않으면서 이상치만 막는다.
-CONTEXT_TEXT_LIMIT = 200
 
 
 def _flatten(text: str) -> str:
@@ -228,7 +225,11 @@ def _dedupe_key(action: dict) -> tuple:
         return (kind, p["todo_id"])
     if kind == "schedule_delete":
         return (kind, p["schedule_id"])
-    return (kind, p["commitment_id"], p["to_status"])
+    if kind == "commitment_status":
+        return (kind, p["commitment_id"], p["to_status"])
+    # kind를 늘리면서 여기를 잊으면 payload 키가 없어 KeyError로 500이 난다.
+    # 중복 제거를 포기하는 편이 낫다 — 카드가 두 장 뜨는 것이 응답 실패보다 낫다.
+    return (kind, id(action))
 
 
 def _action(kind: str, label: str, payload: dict, warning: str | None = None) -> dict:
