@@ -104,6 +104,18 @@ def due_flags(commitment: Commitment, today: date) -> tuple[bool, bool]:
     return (delta < 0, 0 <= delta <= DUE_SOON_DAYS)
 
 
+def days_past_due(commitment: Commitment, today: date) -> int | None:
+    """기한이 며칠 지났는지. 안 지났거나 기한이 없으면 None.
+
+    is_overdue와 달리 status를 보지 않는다. 추적 대상이냐(proposed는 아니다)와
+    기한이 지났느냐는 다른 질문이고, 비서는 후자를 짚어줘야 한다.
+    """
+    if commitment.due_date is None:
+        return None
+    delta = (today - commitment.due_date).days
+    return delta if delta > 0 else None
+
+
 def _parse_date(value: str) -> date | None:
     try:
         return datetime.strptime(value, "%Y-%m-%d").date()

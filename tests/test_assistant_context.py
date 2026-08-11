@@ -140,6 +140,46 @@ def test_confirmed_commitment_carries_due_flags(db_session):
     assert by_content["미확인 지남"]["is_overdue"] is False
 
 
+def test_days_past_due_counts_proposed_too(db_session):
+    """is_overdue는 proposed를 빼지만, 기한이 지난 사실 자체는 상태와 무관하다.
+
+    모델에게 날짜 뺄셈을 시키면 안 짚고 넘어간다(실측). 세어서 넣어준다.
+    """
+    user, group = _seed_group(db_session, "A팀")
+    today = commitment_service.today_kst()
+    _commitment(db_session, group.id, "확정 지남", status="confirmed",
+                due=today - timedelta(days=3))
+    _commitment(db_session, group.id, "미확인 지남", status="proposed",
+                due=today - timedelta(days=1))
+    _commitment(db_session, group.id, "아직 남음", status="proposed",
+                due=today + timedelta(days=2))
+    _commitment(db_session, group.id, "기한 없음", status="proposed", due=None)
+    db_session.commit()
+
+    ctx = assistant_service.build_context(db_session, group.id, user.id)
+    by_content = {c["content"]: c for c in ctx["commitments"]}
+
+    assert by_content["확정 지남"]["days_past_due"] == 3
+    assert by_content["미확인 지남"]["days_past_due"] == 1
+    assert by_content["아직 남음"]["days_past_due"] is None
+    assert by_content["기한 없음"]["days_past_due"] is None
+
+
+def test_render_states_days_past_due(db_session):
+    """렌더된 줄에 "며칠 지났는지"가 글자로 있어야 모델이 그걸 옮겨 말한다."""
+    user, group = _seed_group(db_session, "A팀")
+    today = commitment_service.today_kst()
+    _commitment(db_session, group.id, "미확인 지남", status="proposed",
+                due=today - timedelta(days=1))
+    db_session.commit()
+
+    rendered = assistant_service.render_context(
+        assistant_service.build_context(db_session, group.id, user.id)
+    )
+
+    assert "기한지남 1일" in rendered
+
+
 def test_client_name_is_resolved(db_session):
     user, group = _seed_group(db_session, "A팀")
     client = Client(group_id=group.id, name="A고객")

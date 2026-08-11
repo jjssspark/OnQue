@@ -72,6 +72,10 @@ def _commitments(db: Session, group_id: int, user_id: int, today: date) -> list[
                     "source_type": commitment.source_type,
                     "is_overdue": is_overdue,
                     "is_due_soon": is_due_soon,
+                    # is_overdue는 proposed를 빼므로(추적 대상이 아니라서) 미확인
+                    # 약속은 기한이 지나도 아무 표시가 없었다. 모델에게 오늘
+                    # 날짜와 비교하라고 프롬프트로 시켰지만 실측에서 안 짚었다.
+                    "days_past_due": commitment_service.days_past_due(commitment, today),
                 }
             )
     return rows
@@ -154,8 +158,10 @@ def render_context(context: dict) -> str:
         lines.append("(없음)")
     for c in context["commitments"]:
         flags = []
-        if c["is_overdue"]:
-            flags.append("기한초과")
+        # 며칠인지까지 적는다. "기한초과"만으로는 모델이 얼마나 급한지 못 가리고,
+        # 스스로 세게 하면 그냥 넘어간다.
+        if c["days_past_due"] is not None:
+            flags.append(f"기한지남 {c['days_past_due']}일")
         if c["is_due_soon"]:
             flags.append("마감임박")
         client_name = _flatten(c["client_name"]) if c["client_name"] else "미지정"
