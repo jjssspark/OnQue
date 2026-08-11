@@ -29,3 +29,6 @@ uploads/
 *.zip
 *.log
 onque-frontend/.git.bak/
+
+# 브레인스토밍 목업 (로컬 전용)
+.superpowers/
