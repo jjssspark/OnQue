@@ -1,0 +1,40 @@
+name: warm-backend
+
+# Render 무료 티어는 유휴 상태에서 컨테이너를 내리고, 그 뒤 첫 요청이
+# 콜드스타트로 20~60초 걸린다(2026-08-11 실측 39초). 사용자가 앱에 들어오면
+# AuthContext가 곧바로 GET /me를 치므로, 그 지연이 그대로 스플래시 대기
+# 시간이 된다.
+#
+# 업무시간에만 깨워 둔다. 24시간 워밍하면 무료 티어의 월 750시간 한도를
+# 넘긴다(상시 가동이 월 730시간). 야간·주말 첫 접속은 여전히 느리다 — 그건
+# 감수하고 끊은 선이다.
+
+on:
+  schedule:
+    # UTC 기준이다. KST = UTC+9 이므로 00:00~09:50 UTC = 09:00~18:50 KST, 평일.
+    - cron: '*/10 0-9 * * 1-5'
+  workflow_dispatch: {}   # 동작 확인용 수동 실행
+
+# 앞 실행이 콜드스타트를 기다리는 중에 다음 스케줄이 겹쳐 봐야 의미가 없다.
+concurrency:
+  group: warm-backend
+  cancel-in-progress: false
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: 백엔드 깨우기
+        run: |
+          # 헬스체크 경로는 GET / 다. /health 가 아니다 — TS-017이 그 실수 기록이다.
+          # 콜드스타트가 최대 60초라 --max-time 을 넉넉히 준다.
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 \
+            https://onque-backend-la7e.onrender.com/)
+          echo "status=$code"
+          # 실패해도 워크플로를 빨간불로 만들지 않는다. 워밍은 최선 노력이고,
+          # 간헐적 실패가 매번 알림으로 올라오면 곧 전부 무시하게 된다.
+          # 대신 조용히 넘기지도 않는다 — 경고로 남겨 로그에서 추세를 본다.
+          if [ "$code" != "200" ]; then
+            echo "::warning::워밍 실패 (status=$code)"
+          fi

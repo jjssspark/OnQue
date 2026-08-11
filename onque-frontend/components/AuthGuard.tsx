@@ -8,7 +8,11 @@ import { MobileNav } from '@/components/MobileNav';
 import { SmartDashboardPanel } from '@/components/SmartDashboardPanel';
 
 const PUBLIC_PATHS = ['/', '/login', '/signup'];
-const MIN_SPLASH_MS = 2500;
+// 스플래시 최소 노출 시간. 이 값이 곧 진입의 하한이다 — 인증이 즉시 끝나도
+// (토큰이 없으면 네트워크 없이 판정된다) 이만큼은 무조건 기다린다.
+// 2500ms는 로고를 보여주는 값으로 과해서, 인지는 되면서 깜빡임으로 보이지도
+// 않는 800ms로 낮췄다.
+const MIN_SPLASH_MS = 800;
 
 function SplashScreen() {
   return (
