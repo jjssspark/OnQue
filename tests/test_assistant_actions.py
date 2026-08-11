@@ -189,6 +189,47 @@ def test_action_beyond_max_is_dropped(db_session):
     assert dropped == len(todos) - assistant_service.MAX_ACTIONS
 
 
+def test_duplicate_action_is_dropped(db_session):
+    """모델이 같은 대상에 같은 액션을 두 번 내면 카드가 두 장 뜬다 — 사용자는
+    지울 게 두 개인 줄 안다. 하나로 합치되 버린 건 dropped에 넣는다. 조용히
+    사라지면 비서가 요청을 무시했다고 읽힌다."""
+    user, group = _seed_group(db_session, "A팀")
+    todo = Todo(group_id=group.id, content="지울 것")
+    db_session.add(todo)
+    db_session.commit()
+
+    raw_actions = [
+        {"kind": "todo_delete", "todo_id": todo.id},
+        {"kind": "todo_delete", "todo_id": todo.id},
+    ]
+    actions, dropped = assistant_service.validate_actions(
+        db_session, group.id, raw_actions, user.id
+    )
+
+    assert len(actions) == 1
+    assert dropped == 1
+
+
+def test_different_actions_on_same_target_both_survive(db_session):
+    """같은 할 일이라도 완료와 삭제는 다른 제안이다. 대상 id만으로 묶으면
+    사용자가 고를 선택지 하나가 사라진다."""
+    user, group = _seed_group(db_session, "A팀")
+    todo = Todo(group_id=group.id, content="할 일")
+    db_session.add(todo)
+    db_session.commit()
+
+    raw_actions = [
+        {"kind": "todo_done", "todo_id": todo.id},
+        {"kind": "todo_delete", "todo_id": todo.id},
+    ]
+    actions, dropped = assistant_service.validate_actions(
+        db_session, group.id, raw_actions, user.id
+    )
+
+    assert [a["kind"] for a in actions] == ["todo_done", "todo_delete"]
+    assert dropped == 0
+
+
 def test_commitment_status_action_on_hidden_commitment_is_dropped(db_session):
     """C1: 비공개 방 출처 약속을 지목한 commitment_status 액션은, 그 방 멤버가
     아닌 사용자에게는 카드를 만들지 않고 dropped 처리해야 한다. 그대로 카드를

@@ -10,6 +10,7 @@ from fastapi import HTTPException, UploadFile
 from google import genai
 from google.genai import types
 
+from constants import MAX_ACTIONS
 from models import DOCUMENT_CATEGORIES
 
 logger = logging.getLogger(__name__)
@@ -577,10 +578,13 @@ _ASSISTANT_RESPONSE_SCHEMA = {
     "required": ["reply"],
     "properties": {
         "reply": {"type": "STRING", "description": "사용자에게 보일 답변."},
-        # assistant_service.MAX_ACTIONS와 값을 맞춘다. 여긴 모델에게 주는 힌트일
-        # 뿐이고, 실제 상한 강제는 validate_actions가 한다 — 모델이 넘겨도
-        # 서버가 자른다.
-        "actions": {"type": "ARRAY", "items": _ASSISTANT_ACTION_SCHEMA, "maxItems": 10},
+        # 여긴 모델에게 주는 힌트일 뿐이고, 실제 상한 강제는
+        # assistant_service.validate_actions가 한다 — 모델이 넘겨도 서버가 자른다.
+        "actions": {
+            "type": "ARRAY",
+            "items": _ASSISTANT_ACTION_SCHEMA,
+            "maxItems": MAX_ACTIONS,
+        },
     },
 }
 

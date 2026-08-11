@@ -11,6 +11,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 import commitment_service
+from constants import MAX_ACTIONS
 from models import Client, Commitment, Schedule, Todo
 
 # 매 메시지마다 전량을 프롬프트에 싣는다. 토큰이 곧 비용이고 Gemini 무료 티어에
@@ -18,6 +19,9 @@ from models import Client, Commitment, Schedule, Todo
 CONTEXT_COMMITMENT_LIMIT = 100
 CONTEXT_TODO_LIMIT = 50
 CONTEXT_SCHEDULE_LIMIT = 30
+# 항목 하나가 차지할 수 있는 최대 길이. 개수만 막으면 5000자짜리 할 일 하나가
+# 그대로 실린다. 200자면 할 일·약속 한 줄 요약을 자르지 않으면서 이상치만 막는다.
+CONTEXT_TEXT_LIMIT = 200
 # 사용자·비서 메시지를 합쳐 배열 항목 20개(약 10왕복).
 HISTORY_MESSAGE_LIMIT = 20
 
@@ -114,10 +118,16 @@ def _clients(db: Session, group_id: int) -> list[str]:
 
 
 def _flatten(text: str) -> str:
-    """개행을 공백으로 바꾼다. DB에서 온 텍스트(할 일·약속·클라이언트명 등)에
-    개행과 "[질문]" 같은 구획 표시가 섞이면 프롬프트 구조를 흉내 내 모델을
-    속일 수 있다 — 한 줄로 눌러 그 여지를 없앤다."""
-    return " ".join(text.splitlines())
+    """개행을 공백으로 바꾸고 길이를 자른다. DB에서 온 텍스트(할 일·약속·
+    클라이언트명 등)에 개행과 "[질문]" 같은 구획 표시가 섞이면 프롬프트 구조를
+    흉내 내 모델을 속일 수 있다 — 한 줄로 눌러 그 여지를 없앤다.
+
+    잘렸으면 말줄임표를 붙인다. 조용히 자르면 모델이 반쪽짜리 내용을 전체로
+    알고 단정해 답한다."""
+    flat = " ".join(text.splitlines())
+    if len(flat) <= CONTEXT_TEXT_LIMIT:
+        return flat
+    return flat[:CONTEXT_TEXT_LIMIT] + "…"
 
 
 def render_context(context: dict) -> str:
@@ -161,12 +171,6 @@ _SAFE_KINDS = frozenset({"todo_add", "todo_done", "schedule_add"})
 # 역방향이 없어 한 번 넘어가면 앱 안에서 되돌릴 수 없다.
 _CONFIRM_KINDS = frozenset({"todo_delete", "schedule_delete", "commitment_status"})
 
-# 통과 액션 상한. 프론트가 safe 액션을 순차 자동 실행하므로, 모델이 할 일 수십
-# 건에 한꺼번에 액션을 내면 클릭 없이 그만큼의 쓰기가 나간다. 초과분은 dropped로
-# 합산한다. gemini_service._ASSISTANT_RESPONSE_SCHEMA의 actions maxItems와 값을
-# 맞춘다 — 순환 import를 피하려 상수 자체는 공유하지 않는다.
-MAX_ACTIONS = 10
-
 _STATUS_LABELS = {
     "confirmed": "확정",
     "fulfilled": "이행 완료",
@@ -182,6 +186,7 @@ def validate_actions(
     이 함수는 DB에 쓰지 않는다. 실행은 프론트가 기존 엔드포인트로 한다.
     """
     validated: list[dict] = []
+    seen: set[tuple] = set()
     dropped = 0
 
     for raw in raw_actions or []:
@@ -189,12 +194,42 @@ def validate_actions(
         if built is None:
             dropped += 1
             continue
+        key = _dedupe_key(built)
+        if key in seen:
+            dropped += 1
+            continue
         if len(validated) >= MAX_ACTIONS:
             dropped += 1
             continue
+        seen.add(key)
         validated.append(built)
 
     return validated, dropped
+
+
+def _dedupe_key(action: dict) -> tuple:
+    """같은 일을 두 번 하는 액션을 하나로 본다. 모델이 같은 todo_delete를 두 번
+    내면 카드가 두 장 떠서, 사용자는 지울 게 두 개인 줄 안다.
+
+    id를 지목하는 kind는 (kind, 대상 id)로 충분하다. commitment_status만
+    to_status까지 넣는다 — 같은 약속을 확정과 무시로 각각 제안하는 건 서로 다른
+    제안이고, 사용자가 둘 중 하나를 골라야 한다.
+
+    todo_add·schedule_add는 지목할 id가 없다. 내용이 같으면 같은 추가로 본다."""
+    kind, p = action["kind"], action["payload"]
+    if kind == "todo_add":
+        return (kind, p["content"], p["due_date"])
+    if kind == "schedule_add":
+        return (kind, p["title"], p["scheduled_date"])
+    if kind in ("todo_done", "todo_delete"):
+        return (kind, p["todo_id"])
+    if kind == "schedule_delete":
+        return (kind, p["schedule_id"])
+    if kind == "commitment_status":
+        return (kind, p["commitment_id"], p["to_status"])
+    # kind를 늘리면서 여기를 잊으면 payload 키가 없어 KeyError로 500이 난다.
+    # 중복 제거를 포기하는 편이 낫다 — 카드가 두 장 뜨는 것이 응답 실패보다 낫다.
+    return (kind, id(action))
 
 
 def _action(kind: str, label: str, payload: dict, warning: str | None = None) -> dict:
