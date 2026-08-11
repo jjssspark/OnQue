@@ -70,6 +70,7 @@ export function SmartDashboardPanel() {
         type="button"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
+        aria-controls="smart-dashboard-lists"
         className="flex w-full items-center justify-between border-b border-border px-5 py-3 text-left transition hover:bg-foreground/[0.03]"
       >
         <span className="font-mono text-[10px] text-foreground/60">
@@ -83,7 +84,7 @@ export function SmartDashboardPanel() {
       </button>
 
       {expanded && (
-        <div className="max-h-[45vh] shrink-0 overflow-y-auto">
+        <div id="smart-dashboard-lists" className="max-h-[45vh] shrink-0 overflow-y-auto">
       {(proposedCount > 0 || dueSoon.length > 0) && (
         <section className="border-b border-border px-5 py-4">
           {proposedCount > 0 && (

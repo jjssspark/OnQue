@@ -98,7 +98,13 @@ export function AssistantPanel() {
 
   return (
     <section className="flex min-h-0 flex-1 flex-col border-t border-border">
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+      {/* 답변은 사용자 조작 없이 비동기로 도착한다. 알리지 않으면 스크린리더
+          사용자는 비서가 답했다는 사실 자체를 모른다. polite로 두어 타이핑
+          중이면 끊지 않고 기다렸다 읽게 한다. */}
+      <div
+        aria-live="polite"
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4"
+      >
         {messages.length === 0 && !pending && (
           <p className="text-xs leading-relaxed text-foreground/40">
             약속·할 일·일정에 대해 물어보세요. 예: A사한테 뭐 약속했더라?
@@ -134,7 +140,11 @@ export function AssistantPanel() {
           </div>
         ))}
 
-        {pending && <p className="text-xs text-foreground/40">비서가 확인하는 중입니다…</p>}
+        {pending && (
+          <p role="status" className="text-xs text-foreground/40">
+            비서가 확인하는 중입니다…
+          </p>
+        )}
 
         {error && (
           <p role="alert" className="text-xs leading-relaxed text-red-300">
