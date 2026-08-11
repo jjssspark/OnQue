@@ -3,6 +3,9 @@
 import json
 from types import SimpleNamespace
 
+import pytest
+from google.genai import errors as genai_errors
+
 import gemini_service
 
 
@@ -66,6 +69,35 @@ def test_answer_assistant_returns_none_on_malformed_json(monkeypatch):
         "generate_content",
         lambda **kwargs: SimpleNamespace(text="이건 JSON이 아니다"),
     )
+
+    assert gemini_service.answer_assistant("ctx", [], "질문") is None
+
+
+def _client_error(code):
+    return genai_errors.ClientError(
+        code,
+        {"error": {"code": code, "message": "quota", "status": "RESOURCE_EXHAUSTED"}},
+    )
+
+
+def test_quota_exceeded_is_raised_not_swallowed(monkeypatch):
+    """429는 None으로 뭉개면 안 된다. 일시적 오류와 달리 사용량이 초기화될
+    때까지 계속 실패해서, 호출자가 "잠시 후 다시"와 다른 안내를 해야 한다."""
+    def boom(**kwargs):
+        raise _client_error(429)
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", boom)
+
+    with pytest.raises(gemini_service.QuotaExceeded):
+        gemini_service.answer_assistant("ctx", [], "질문")
+
+
+def test_other_client_errors_still_return_none(monkeypatch):
+    """한도만 구분한다. 나머지 실패는 종전대로 None이라 502로 나간다."""
+    def boom(**kwargs):
+        raise _client_error(400)
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", boom)
 
     assert gemini_service.answer_assistant("ctx", [], "질문") is None
 

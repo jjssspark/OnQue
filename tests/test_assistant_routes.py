@@ -77,6 +77,24 @@ def test_gemini_failure_returns_502_envelope(client, monkeypatch):
     assert res.json()["error"]["code"] == "ASSISTANT_UNAVAILABLE"
 
 
+def test_quota_exhaustion_returns_429_with_its_own_code(client, monkeypatch):
+    """한도 소진은 502가 아니라 429다. 502 문구("잠시 후 다시 시도해주세요")를
+    그대로 쓰면 사용량이 초기화될 때까지 계속 실패하는데도 사용자가 재시도를
+    반복한다."""
+    owner, group_id = _setup(client)
+
+    def boom(ctx, hist, msg):
+        raise gemini_service.QuotaExceeded()
+
+    monkeypatch.setattr(gemini_service, "answer_assistant", boom)
+
+    res = _ask(client, owner["token"], group_id)
+
+    assert res.status_code == 429
+    assert res.json()["error"]["code"] == "ASSISTANT_QUOTA_EXCEEDED"
+    assert "잠시 후" not in res.json()["error"]["message"]
+
+
 def test_history_is_capped_not_rejected(client, monkeypatch):
     """상한 초과는 사용자 잘못이 아니다. 422로 거절하지 않고 서버가 자른다."""
     import assistant_service

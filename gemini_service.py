@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from fastapi import HTTPException, UploadFile
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from constants import MAX_ACTIONS
@@ -701,11 +702,23 @@ _ASSISTANT_PROMPT = """
 """
 
 
+class QuotaExceeded(Exception):
+    """Gemini 호출 한도 소진(429).
+
+    다른 실패와 구분해서 올린다. 일시적 오류는 곧 풀리지만 한도 소진은 사용량이
+    초기화될 때까지 계속 실패한다 — 둘을 같은 안내로 뭉개면 사용자가 "잠시 후
+    다시"를 믿고 계속 재시도하다 앱이 고장났다고 판단한다.
+    """
+
+
 def answer_assistant(context_text: str, history: list[dict], message: str) -> dict | None:
     """비서 답변과 액션 제안을 받는다.
 
     실패하면 None. 빈 답으로 뭉개면 호출자가 "모델이 죽음"과 "할 말 없음"을
     구분하지 못해, 사용자에게 정상인 척 빈 화면을 보여주게 된다.
+
+    단, 한도 소진만은 None이 아니라 QuotaExceeded로 올린다. 안내 문구가 달라야
+    한다.
 
     여기서 돌려주는 actions는 검증 전 원본이다 — 모델이 없는 id를 지어낼 수
     있으므로 assistant_service.validate_actions를 반드시 거쳐야 한다.
@@ -735,7 +748,15 @@ def answer_assistant(context_text: str, history: list[dict], message: str) -> di
             return None
         actions = data.get("actions")
         return {"reply": reply, "actions": actions if isinstance(actions, list) else []}
-    except Exception:
+    except Exception as exc:
+        if isinstance(exc, genai_errors.ClientError) and exc.code == 429:
+            # 스택 트레이스는 남기지 않는다. 버그가 아니라 예상된 한도이고,
+            # 소진되면 매 요청마다 찍혀 로그가 트레이스로 뒤덮인다.
+            logger.warning(
+                "비서 호출 한도 소진",
+                extra={"event": "assistant.answer.quota_exceeded"},
+            )
+            raise QuotaExceeded from exc
         logger.warning(
             "비서 응답 실패",
             extra={"event": "assistant.answer.failed"},

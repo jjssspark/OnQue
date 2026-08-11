@@ -49,9 +49,21 @@ def send_assistant_message(
     # 상한 초과를 422로 거절하지 않는다. 대화가 길어진 건 사용자 잘못이 아니다.
     history = [t.model_dump() for t in body.history][-assistant_service.HISTORY_MESSAGE_LIMIT:]
 
-    answer = gemini_service.answer_assistant(
-        assistant_service.render_context(context), history, body.message
-    )
+    try:
+        answer = gemini_service.answer_assistant(
+            assistant_service.render_context(context), history, body.message
+        )
+    except gemini_service.QuotaExceeded:
+        # 502가 아니라 429다. 일시적 오류가 아니라 사용량이 초기화될 때까지
+        # 계속 실패하는 상태라, "잠시 후 다시"로 안내하면 사용자가 재시도를
+        # 반복하다 앱이 고장난 줄 안다.
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "ASSISTANT_QUOTA_EXCEEDED",
+                "message": "AI 호출 한도를 모두 썼습니다. 사용량이 초기화된 뒤 다시 이용해주세요.",
+            },
+        )
     if answer is None:
         raise HTTPException(
             status_code=502,
