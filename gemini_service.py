@@ -342,6 +342,29 @@ def render_summary_text(structured: dict) -> str:
 # 인라인으로 실을 수 있는 최대 원본 크기. Gemini는 요청 본문 전체가 20MB를 넘으면
 # 거부하는데 인라인 데이터는 base64로 실려 약 1.33배가 된다. 10MB면 인코딩 후에도
 # 여유가 있다. 넘으면 File API로 올린다.
+class QuotaExceeded(Exception):
+    """Gemini 호출 한도 소진(429).
+
+    다른 실패와 구분해서 올린다. 일시적 오류는 곧 풀리지만 한도 소진은 사용량이
+    초기화될 때까지 계속 실패한다 — 둘을 같은 안내로 뭉개면 사용자가 "잠시 후
+    다시"를 믿고 계속 재시도하다 앱이 고장났다고 판단한다.
+    """
+
+
+def _reraise_if_quota(exc: Exception, event: str) -> None:
+    """429면 QuotaExceeded로 바꿔 올리고, 아니면 아무것도 하지 않는다.
+
+    어느 기능이 한도에 걸렸는지는 event로 구분한다 — 요약과 비서가 같은
+    할당량을 나눠 쓰므로, 무엇이 다 썼는지 로그에서 갈라 볼 수 있어야 한다.
+
+    스택 트레이스는 남기지 않는다. 버그가 아니라 예상된 한도이고, 소진되면 매
+    요청마다 찍혀 로그가 트레이스로 뒤덮인다.
+    """
+    if isinstance(exc, genai_errors.ClientError) and exc.code == 429:
+        logger.warning("Gemini 호출 한도 소진", extra={"event": event})
+        raise QuotaExceeded from exc
+
+
 _INLINE_MAX_BYTES = 10 * 1024 * 1024
 
 
@@ -400,8 +423,11 @@ async def summarize_upload(file: UploadFile, prompt: str) -> tuple[dict | None, 
             structured = normalize_summary(json.loads(response.text))
             if structured["headline"] or structured["key_points"]:
                 return structured, render_summary_text(structured)
-        except Exception:
-            pass
+        except Exception as exc:
+            # 한도 소진이면 아래 재시도는 성공할 수 없다. File API 업로드와 2차
+            # 호출을 더 태우기만 하므로 여기서 끊는다. 나머지 실패는 종전대로
+            # 삼키고 폴백으로 넘어간다.
+            _reraise_if_quota(exc, "document.summarize.quota_exceeded")
 
         # 여기 도달했다는 건 1차가 실패했거나 빈 요약이었다는 뜻이다. 모델 호출이
         # 두 번 나가므로 이 로그가 자주 보이면 지연의 절반이 재시도다.
@@ -426,9 +452,13 @@ async def summarize_upload(file: UploadFile, prompt: str) -> tuple[dict | None, 
 
         return None, summary_text
 
-    except HTTPException:
+    except (HTTPException, QuotaExceeded):
         raise
     except Exception as e:
+        # 429는 500으로 뭉개지 않는다. 이 경로의 detail은 예외 문자열을 그대로
+        # 담는데, 429 본문에는 프로젝트 할당량 정보와 내부 URL이 들어 있어
+        # 응답에 실리면 안 된다(api-contract.md).
+        _reraise_if_quota(e, "document.summarize.quota_exceeded")
         raise HTTPException(status_code=500, detail=f"Gemini 요약 중 오류: {e}")
 
     finally:
@@ -713,15 +743,6 @@ _ASSISTANT_PROMPT = """
 """
 
 
-class QuotaExceeded(Exception):
-    """Gemini 호출 한도 소진(429).
-
-    다른 실패와 구분해서 올린다. 일시적 오류는 곧 풀리지만 한도 소진은 사용량이
-    초기화될 때까지 계속 실패한다 — 둘을 같은 안내로 뭉개면 사용자가 "잠시 후
-    다시"를 믿고 계속 재시도하다 앱이 고장났다고 판단한다.
-    """
-
-
 def answer_assistant(context_text: str, history: list[dict], message: str) -> dict | None:
     """비서 답변과 액션 제안을 받는다.
 
@@ -760,14 +781,7 @@ def answer_assistant(context_text: str, history: list[dict], message: str) -> di
         actions = data.get("actions")
         return {"reply": reply, "actions": actions if isinstance(actions, list) else []}
     except Exception as exc:
-        if isinstance(exc, genai_errors.ClientError) and exc.code == 429:
-            # 스택 트레이스는 남기지 않는다. 버그가 아니라 예상된 한도이고,
-            # 소진되면 매 요청마다 찍혀 로그가 트레이스로 뒤덮인다.
-            logger.warning(
-                "비서 호출 한도 소진",
-                extra={"event": "assistant.answer.quota_exceeded"},
-            )
-            raise QuotaExceeded from exc
+        _reraise_if_quota(exc, "assistant.answer.quota_exceeded")
         logger.warning(
             "비서 응답 실패",
             extra={"event": "assistant.answer.failed"},

@@ -1,3 +1,11 @@
+import asyncio
+import io
+from types import SimpleNamespace
+
+import pytest
+from fastapi import UploadFile
+from google.genai import errors as genai_errors
+
 import gemini_service
 
 
@@ -164,6 +172,85 @@ def test_summarize_document_falls_back_to_plain_text(client, monkeypatch):
         "/documents", params={"group_id": group_id}, headers={"Authorization": f"Bearer {token}"}
     ).json()
     assert listed[0]["structured"] is None
+
+
+# ── 한도 소진 ────────────────────────────────────────────────
+
+
+def _quota_error():
+    return genai_errors.ClientError(
+        429,
+        {"error": {"code": 429, "message": "quota", "status": "RESOURCE_EXHAUSTED"}},
+    )
+
+
+def test_summarize_stops_on_quota_instead_of_retrying(monkeypatch):
+    """요약은 1차가 실패하면 File API로 바꿔 재시도한다. 한도 소진일 때 그
+    재시도는 성공할 수 없으면서 호출만 더 먹는다 — 재시도 전에 끊어야 한다."""
+    calls = []
+
+    def boom(**kwargs):
+        calls.append(1)
+        raise _quota_error()
+
+    def no_upload(**kwargs):
+        raise AssertionError("한도 소진 뒤 File API 업로드를 시도하면 안 된다")
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", boom)
+    monkeypatch.setattr(gemini_service.client.files, "upload", no_upload)
+
+    upload = UploadFile(file=io.BytesIO("회의록 내용".encode()), filename="meeting.txt")
+
+    with pytest.raises(gemini_service.QuotaExceeded):
+        asyncio.run(gemini_service.summarize_upload(upload, "요약해라"))
+
+    assert len(calls) == 1
+
+
+def test_summarize_still_falls_back_on_other_errors(monkeypatch):
+    """한도만 구분한다. 나머지 실패는 종전대로 폴백 호출로 넘어가야 한다."""
+    calls = []
+
+    def flaky(**kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise ValueError("구조화 파싱 실패")
+        return SimpleNamespace(text="평문 요약")
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", flaky)
+    # 폴백은 인라인이 원인일 수 있다고 보고 File API로 바꿔 다시 올린다.
+    # 막지 않으면 이 테스트가 실제 네트워크를 탄다.
+    monkeypatch.setattr(
+        gemini_service.client.files, "upload", lambda **kwargs: SimpleNamespace(name="files/x")
+    )
+
+    upload = UploadFile(file=io.BytesIO("회의록 내용".encode()), filename="meeting.txt")
+    structured, text = asyncio.run(gemini_service.summarize_upload(upload, "요약해라"))
+
+    assert structured is None
+    assert text == "평문 요약"
+    assert len(calls) == 2
+
+
+def test_summarize_endpoint_returns_429_with_its_own_code(client, monkeypatch):
+    """500으로 뭉개면 사용자는 파일이 잘못된 줄 알고 다른 파일로 재시도한다.
+    그 재시도도 전부 실패한다."""
+    token, group_id = _setup_group(client)
+
+    async def boom(file, prompt):
+        raise gemini_service.QuotaExceeded()
+
+    monkeypatch.setattr(gemini_service, "summarize_upload", boom)
+
+    res = client.post(
+        "/summarize-document",
+        params={"group_id": group_id},
+        files={"file": ("meeting.txt", b"content", "text/plain")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert res.status_code == 429
+    assert res.json()["error"]["code"] == "DOCUMENT_QUOTA_EXCEEDED"
 
 
 # ── 수동 할 일 등록 ──────────────────────────────────────────

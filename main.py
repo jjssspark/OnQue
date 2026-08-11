@@ -193,7 +193,19 @@ async def _summarize_and_store(
 ) -> dict:
     """요약 → 저장 → (선택) 할 일 등록까지의 공통 흐름."""
 
-    structured, summary_text = await gemini_service.summarize_upload(file, prompt)
+    try:
+        structured, summary_text = await gemini_service.summarize_upload(file, prompt)
+    except gemini_service.QuotaExceeded:
+        # 500이 아니라 429다. 요약과 비서가 같은 무료 티어 할당량을 나눠 쓰기
+        # 때문에 사용자는 요약 몇 건 만에 이 상태를 만난다. 일반 서버 오류로
+        # 보이면 파일이 잘못됐다고 생각하고 다른 파일로 계속 재시도한다.
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "DOCUMENT_QUOTA_EXCEEDED",
+                "message": "AI 호출 한도를 모두 썼습니다. 사용량이 초기화된 뒤 다시 이용해주세요.",
+            },
+        )
 
     doc = Document(
         group_id=group_id,
