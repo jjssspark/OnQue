@@ -68,7 +68,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div className="flex min-h-screen min-w-0 flex-1 flex-col lg:h-screen">
         <MobileNav />
-        <main className="flex-1 overflow-y-auto">{children}</main>
+        {/* lg 이상에서 셸이 확정 높이를 갖는 순간 문서가 아니라 이 요소가
+            스크롤 컨테이너가 된다. tabindex가 없으면 아무 데도 포커스하지 않은
+            채 Space·PageDown을 눌러도 스크롤되지 않는다 — 키보드만 쓰는
+            사용자가 본문을 못 읽는다(WCAG 2.1.1). */}
+        <main tabIndex={0} className="flex-1 overflow-y-auto">
+          {children}
+        </main>
       </div>
       <SmartDashboardPanel />
     </div>
