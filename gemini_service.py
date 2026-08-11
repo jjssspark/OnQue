@@ -1,5 +1,6 @@
 import json
 import logging
+import mimetypes
 import os
 import tempfile
 import time
@@ -337,6 +338,32 @@ def render_summary_text(structured: dict) -> str:
     return "\n\n".join(blocks)
 
 
+# 인라인으로 실을 수 있는 최대 원본 크기. Gemini는 요청 본문 전체가 20MB를 넘으면
+# 거부하는데 인라인 데이터는 base64로 실려 약 1.33배가 된다. 10MB면 인코딩 후에도
+# 여유가 있다. 넘으면 File API로 올린다.
+_INLINE_MAX_BYTES = 10 * 1024 * 1024
+
+
+def _as_content_part(content: bytes, filename: str | None, temp_path: str):
+    """모델에 넘길 파일 파트를 만든다. 인라인이면 업로드 왕복이 통째로 없다.
+
+    File API 업로드는 resumable 방식이라 POST가 두 번 나가고, 2.5KB짜리
+    텍스트에도 실측 2,681~2,950ms가 걸렸다. 요청에 바로 실을 수 있는 크기면
+    올릴 이유가 없다.
+
+    확장자로 mime을 못 알아내거나 크기가 크면 업로드로 간다. 이 판단이 틀려
+    모델이 인라인을 거부해도, 호출부가 재시도를 File API로 돌리므로 요약
+    자체를 잃지는 않는다.
+    """
+    mime = mimetypes.guess_type(filename or "")[0]
+    if mime and len(content) <= _INLINE_MAX_BYTES:
+        with _timed("document.summarize.file_inline", bytes=len(content), mime=mime):
+            return types.Part.from_bytes(data=content, mime_type=mime)
+
+    with _timed("document.summarize.file_upload", bytes=len(content)):
+        return client.files.upload(file=temp_path)
+
+
 async def summarize_upload(file: UploadFile, prompt: str) -> tuple[dict | None, str]:
     """업로드 파일을 요약해 (구조화 요약, 평문 요약)을 반환한다.
 
@@ -356,14 +383,13 @@ async def summarize_upload(file: UploadFile, prompt: str) -> tuple[dict | None, 
         raise HTTPException(status_code=500, detail=f"파일 저장 중 오류: {e}")
 
     try:
-        with _timed("document.summarize.file_upload", bytes=len(content)):
-            uploaded_file = client.files.upload(file=temp_path)
+        file_part = _as_content_part(content, file.filename, temp_path)
 
         try:
             with _timed("document.summarize.generate_structured"):
                 response = client.models.generate_content(
                     model=MODEL,
-                    contents=[uploaded_file, prompt],
+                    contents=[file_part, prompt],
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
                         response_schema=_SUMMARY_SCHEMA,
@@ -378,10 +404,18 @@ async def summarize_upload(file: UploadFile, prompt: str) -> tuple[dict | None, 
 
         # 여기 도달했다는 건 1차가 실패했거나 빈 요약이었다는 뜻이다. 모델 호출이
         # 두 번 나가므로 이 로그가 자주 보이면 지연의 절반이 재시도다.
+        #
+        # 1차를 인라인으로 보냈다면 그게 실패 원인일 수 있다(모델이 받지 않는
+        # mime, 크기 초과 등). 재시도는 File API로 바꿔서 간다 — 인라인 판단이
+        # 틀려도 요약 자체를 잃지 않게 하는 안전망이다.
+        if not isinstance(file_part, types.File):
+            with _timed("document.summarize.file_upload_retry", bytes=len(content)):
+                file_part = client.files.upload(file=temp_path)
+
         with _timed("document.summarize.generate_fallback"):
             response = client.models.generate_content(
                 model=MODEL,
-                contents=[uploaded_file, prompt],
+                contents=[file_part, prompt],
                 config=types.GenerateContentConfig(thinking_config=_NO_THINKING),
             )
         summary_text = (getattr(response, "text", "") or "").strip()
