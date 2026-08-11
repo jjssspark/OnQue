@@ -5,7 +5,7 @@
 """
 
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -77,6 +77,18 @@ def _commitments(db: Session, group_id: int, user_id: int, today: date) -> list[
     return rows
 
 
+def _kst_date(value: datetime) -> str:
+    """등록 시각을 사용자가 보는 날짜로 환산한다.
+
+    created_at은 Postgres(운영)에서 aware, SQLite(테스트)에서 naive로 온다.
+    naive면 UTC로 본다 — DB가 넣은 값이라 서버 시각계(UTC)를 따른다.
+    KST로 맞추지 않으면 새벽에 물었을 때 "오늘"이 하루 어긋난다.
+    """
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(commitment_service.KST).date().isoformat()
+
+
 def _todos(db: Session, group_id: int) -> list[dict]:
     stmt = (
         select(Todo)
@@ -89,6 +101,10 @@ def _todos(db: Session, group_id: int) -> list[dict]:
             "id": t.id,
             "content": t.content,
             "due_date": t.due_date.isoformat() if t.due_date else None,
+            # 기한과 등록일은 다르다. "오늘 추가된 할 일"을 물으면 이게 없어서
+            # 답을 못 했다 — 화면(GET /todos)은 created_at 기준으로 정렬해
+            # 보여주는데 비서만 그걸 못 보고 있었다.
+            "created_date": _kst_date(t.created_at),
         }
         for t in db.execute(stmt).scalars().all()
     ]
@@ -153,7 +169,10 @@ def render_context(context: dict) -> str:
     if not context["todos"]:
         lines.append("(없음)")
     for t in context["todos"]:
-        lines.append(f"- id={t['id']} | {_flatten(t['content'])} | 기한={t['due_date'] or '없음'}")
+        lines.append(
+            f"- id={t['id']} | {_flatten(t['content'])} | 기한={t['due_date'] or '없음'}"
+            f" | 등록={t['created_date']}"
+        )
 
     lines += ["", "[일정]"]
     if not context["schedules"]:

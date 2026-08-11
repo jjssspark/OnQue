@@ -7,6 +7,7 @@
 from datetime import date, timedelta
 
 import assistant_service
+import commitment_service
 from models import (
     ChatRoom,
     ChatRoomMember,
@@ -193,6 +194,24 @@ def test_context_excludes_commitment_from_private_room_for_non_member(db_session
 
     owner_ctx = assistant_service.build_context(db_session, group.id, owner.id)
     assert [c["content"] for c in owner_ctx["commitments"]] == ["비공개 방 약속 내용"]
+
+
+def test_todo_context_carries_created_date(db_session):
+    """화면(GET /todos)은 created_at 내림차순으로 보여주는데 비서 컨텍스트에는
+    등록일이 없었다. 그래서 "오늘 추가된 할 일"을 물으면 할 일이 분명히 있는데도
+    "그 정보는 없습니다"가 나왔다 — 모델 잘못이 아니라 안 준 것이다.
+
+    UTC로 도는 서버에서 새벽에 물어도 사용자가 보는 날짜와 같아야 하므로
+    KST 기준으로 환산한다."""
+    user, group = _seed_group(db_session, "A팀")
+    db_session.add(Todo(group_id=group.id, content="오늘 넣은 일"))
+    db_session.commit()
+
+    today = commitment_service.today_kst().isoformat()
+    ctx = assistant_service.build_context(db_session, group.id, user.id)
+
+    assert ctx["todos"][0]["created_date"] == today
+    assert f"등록={today}" in assistant_service.render_context(ctx)
 
 
 def test_render_context_flattens_newlines_in_user_content(db_session):
