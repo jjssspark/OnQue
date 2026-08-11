@@ -31,6 +31,16 @@ from models import (
     User,
 )
 
+# uvicorn 기본 설정은 자기 로거만 다루고 루트에는 핸들러를 두지 않는다. 그래서
+# 이 앱의 logger.info는 어디에도 출력되지 않았고, logger.warning만 logging의
+# lastResort 핸들러를 타고 우연히 보이던 상태였다. 운영 기본 레벨을 INFO로
+# 맞춘다(observability.md). uvicorn·uvicorn.access는 propagate=False라 여기에
+# 핸들러를 달아도 접근 로그가 두 번 찍히지 않는다.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+
 logger = logging.getLogger(__name__)
 
 Base.metadata.create_all(bind=engine)

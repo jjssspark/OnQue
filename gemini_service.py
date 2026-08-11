@@ -2,6 +2,8 @@ import json
 import logging
 import os
 import tempfile
+import time
+from contextlib import contextmanager
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -14,6 +16,37 @@ from constants import MAX_ACTIONS
 from models import DOCUMENT_CATEGORIES
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _timed(event: str, **fields):
+    """단계 소요 시간을 남긴다.
+
+    요약이 느리다는 체감이 어느 구간에서 오는지 추정이 아니라 수치로 보려는
+    목적이다. 파일 업로드·모델 호출·분류 중 무엇이 큰지 모르면 어디를 고쳐야
+    할지 정할 수 없다.
+
+    소요 시간을 message에도 넣는 이유: 이 저장소는 로깅 포매터를 따로 설정하지
+    않아 uvicorn 기본 핸들러가 message만 출력한다. extra에만 담으면 지금은
+    아무 데도 안 보인다. extra는 나중에 구조화 로깅을 붙일 때를 위해 같이 둔다.
+
+    예외는 삼키지 않고 그대로 올린다 — 호출부의 폴백 판단이 바뀌면 안 된다.
+    실패도 ok=False로 남겨, 1차 호출이 늘 실패해 매번 재호출로 넘어가는지를
+    로그만으로 알 수 있게 한다.
+    """
+    started = time.perf_counter()
+    ok = True
+    try:
+        yield
+    except Exception:
+        ok = False
+        raise
+    finally:
+        elapsed_ms = round((time.perf_counter() - started) * 1000)
+        logger.info(
+            "%s %dms ok=%s", event, elapsed_ms, ok,
+            extra={"event": event, "durationMs": elapsed_ms, "ok": ok, **fields},
+        )
 
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -296,35 +329,41 @@ async def summarize_upload(file: UploadFile, prompt: str) -> tuple[dict | None, 
 
     try:
         suffix = os.path.splitext(file.filename or "")[1]
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            temp_path = tmp.name
-            content = await file.read()
-            tmp.write(content)
+        with _timed("document.summarize.file_save"):
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                temp_path = tmp.name
+                content = await file.read()
+                tmp.write(content)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"파일 저장 중 오류: {e}")
 
     try:
-        uploaded_file = client.files.upload(file=temp_path)
+        with _timed("document.summarize.file_upload", bytes=len(content)):
+            uploaded_file = client.files.upload(file=temp_path)
 
         try:
-            response = client.models.generate_content(
-                model=MODEL,
-                contents=[uploaded_file, prompt],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=_SUMMARY_SCHEMA,
-                ),
-            )
+            with _timed("document.summarize.generate_structured"):
+                response = client.models.generate_content(
+                    model=MODEL,
+                    contents=[uploaded_file, prompt],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=_SUMMARY_SCHEMA,
+                    ),
+                )
             structured = normalize_summary(json.loads(response.text))
             if structured["headline"] or structured["key_points"]:
                 return structured, render_summary_text(structured)
         except Exception:
             pass
 
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=[uploaded_file, prompt],
-        )
+        # 여기 도달했다는 건 1차가 실패했거나 빈 요약이었다는 뜻이다. 모델 호출이
+        # 두 번 나가므로 이 로그가 자주 보이면 지연의 절반이 재시도다.
+        with _timed("document.summarize.generate_fallback"):
+            response = client.models.generate_content(
+                model=MODEL,
+                contents=[uploaded_file, prompt],
+            )
         summary_text = (getattr(response, "text", "") or "").strip()
 
         if not summary_text:
@@ -359,17 +398,21 @@ def classify_document_category(summary_text: str) -> str:
     """문서 요약 내용을 기획/디자인/개발/마케팅/기타 중 하나로 분류한다."""
 
     try:
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=(
-                "다음은 회사 업무 문서를 요약한 내용이다. 이 문서를 "
-                f"{list(_CLASSIFIABLE_CATEGORIES)} 중 하나로 분류해라.\n\n{summary_text}"
-            ),
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=_CATEGORY_SCHEMA,
-            ),
-        )
+        # 요약과 별개로 모델을 한 번 더 부른다. 요약 결과만 보고 정하는 분류라
+        # 요약 스키마에 합칠 여지가 있는데, 합치기 전에 이 호출이 실제로 얼마를
+        # 먹는지부터 잰다.
+        with _timed("document.classify"):
+            response = client.models.generate_content(
+                model=MODEL,
+                contents=(
+                    "다음은 회사 업무 문서를 요약한 내용이다. 이 문서를 "
+                    f"{list(_CLASSIFIABLE_CATEGORIES)} 중 하나로 분류해라.\n\n{summary_text}"
+                ),
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=_CATEGORY_SCHEMA,
+                ),
+            )
         data = json.loads(response.text)
         category = data.get("category")
         if category in _CLASSIFIABLE_CATEGORIES:
