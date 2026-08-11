@@ -36,6 +36,18 @@ def _stub_gemini(monkeypatch, structured):
 # ── 요약 정규화/렌더 ──────────────────────────────────────────
 
 
+def test_normalize_summary_keeps_valid_category_and_rejects_unknown():
+    """분류가 요약 응답에 합쳐졌으므로, 모델이 지어낸 값이 그대로 DB에 들어가면
+    안 된다. 허용 목록에 있는 값만 통과시키고 나머지는 기타로 떨어뜨린다."""
+    valid = gemini_service._CLASSIFIABLE_CATEGORIES[0]
+
+    assert gemini_service.normalize_summary({"category": valid})["category"] == valid
+    assert gemini_service.normalize_summary({"category": "없는분류"})["category"] == "기타"
+    # 통화는 분류 대상에서 빠져 있다. 라우터가 명시적으로 넘기는 값이라
+    # 모델이 고를 수 있으면 안 된다.
+    assert gemini_service.normalize_summary({"category": "통화"})["category"] == "기타"
+
+
 def test_normalize_summary_drops_empty_and_malformed_entries():
     result = gemini_service.normalize_summary(
         {
@@ -52,6 +64,9 @@ def test_normalize_summary_drops_empty_and_malformed_entries():
     )
 
     assert result == {
+        # 분류가 요약 응답에 합쳐졌다. 위 입력에 category가 없으므로 기본값이
+        # 나와야 한다 — 모델이 필드를 빠뜨려도 저장이 깨지면 안 된다.
+        "category": "기타",
         "headline": "제목",
         "key_points": ["유효"],
         "requests": [],

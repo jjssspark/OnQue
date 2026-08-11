@@ -58,6 +58,13 @@ client = genai.Client(api_key=GOOGLE_API_KEY)
 
 MODEL = "gemini-2.5-flash"
 
+# gemini-2.5-flash는 thinking이 기본으로 켜져 있다. 요약처럼 주어진 글을 정리하는
+# 작업에는 추론 단계가 값을 거의 더하지 않는데 지연은 그대로 낸다 — 같은 입력으로
+# 실측했을 때 5,083ms → 2,062~2,343ms 였다. 대신 key_points가 6개에서 5개로 줄어
+# 세부 항목이 조금 성기게 나올 수 있다. 요약 품질이 아쉬우면 이 값을 지우는 것이
+# 되돌리는 방법이다.
+_NO_THINKING = types.ThinkingConfig(thinking_budget=0)
+
 
 def korean_date_context() -> str:
     now = datetime.now(ZoneInfo("Asia/Seoul"))
@@ -217,10 +224,18 @@ def extract_chat_commitments(history_text: str) -> list[dict] | None:
         return None
 
 
+_CLASSIFIABLE_CATEGORIES = tuple(c for c in DOCUMENT_CATEGORIES if c != "통화")
+
 _SUMMARY_SCHEMA = {
     "type": "OBJECT",
-    "required": ["headline", "key_points", "requests", "action_items", "notes", "commitments"],
+    "required": [
+        "headline", "key_points", "requests", "action_items", "notes",
+        "commitments", "category",
+    ],
     "properties": {
+        # 분류를 요약과 같은 응답에 담는다. 요약 결과만 보고 정하는 값이라
+        # 모델을 한 번 더 부를 이유가 없었다 — 그 호출이 실측 1,637ms였다.
+        "category": {"type": "STRING", "enum": list(_CLASSIFIABLE_CATEGORIES)},
         "headline": {"type": "STRING"},
         "key_points": {"type": "ARRAY", "items": {"type": "STRING"}},
         "requests": {"type": "ARRAY", "items": {"type": "STRING"}},
@@ -275,7 +290,10 @@ def normalize_summary(raw: dict) -> dict:
 
     commitments = _normalize_commitments(raw.get("commitments"))
 
+    category = raw.get("category")
+
     return {
+        "category": category if category in _CLASSIFIABLE_CATEGORIES else "기타",
         "headline": (raw.get("headline") or "").strip(),
         "key_points": _clean_list(raw.get("key_points")),
         "requests": _clean_list(raw.get("requests")),
@@ -349,6 +367,7 @@ async def summarize_upload(file: UploadFile, prompt: str) -> tuple[dict | None, 
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
                         response_schema=_SUMMARY_SCHEMA,
+                        thinking_config=_NO_THINKING,
                     ),
                 )
             structured = normalize_summary(json.loads(response.text))
@@ -363,6 +382,7 @@ async def summarize_upload(file: UploadFile, prompt: str) -> tuple[dict | None, 
             response = client.models.generate_content(
                 model=MODEL,
                 contents=[uploaded_file, prompt],
+                config=types.GenerateContentConfig(thinking_config=_NO_THINKING),
             )
         summary_text = (getattr(response, "text", "") or "").strip()
 
@@ -382,8 +402,6 @@ async def summarize_upload(file: UploadFile, prompt: str) -> tuple[dict | None, 
         except Exception:
             pass
 
-
-_CLASSIFIABLE_CATEGORIES = tuple(c for c in DOCUMENT_CATEGORIES if c != "통화")
 
 _CATEGORY_SCHEMA = {
     "type": "OBJECT",

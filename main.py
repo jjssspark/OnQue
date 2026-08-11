@@ -198,7 +198,12 @@ async def _summarize_and_store(
     doc = Document(
         group_id=group_id,
         source_type=source_type,
-        category=category or gemini_service.classify_document_category(summary_text),
+        # 분류는 요약 응답에 함께 온다. classify_document_category는 구조화
+        # 파싱이 실패해 structured가 없을 때만 쓰는 폴백이다 — 그때만 모델을
+        # 한 번 더 부른다. 실측 1,637ms짜리 호출이라 정상 경로에서는 뺐다.
+        category=category
+        or (structured or {}).get("category")
+        or gemini_service.classify_document_category(summary_text),
         filename=file.filename,
         summary=summary_text,
         summary_json=json.dumps(structured, ensure_ascii=False) if structured else None,
