@@ -221,3 +221,44 @@ def test_그룹_미지정이면_거부한다():
     with pytest.raises(SystemExit) as exc:
         main([])
     assert exc.value.code != 0
+
+
+def test_확인_프롬프트에서_취소하면_DB가_그대로다(db_session, group_with_member, monkeypatch):
+    """'n'을 입력하면 아무것도 지우지도 채우지도 않아야 한다."""
+    import db
+    from tests.conftest import TestSessionLocal
+
+    group, _ = group_with_member
+    _put_content(db_session, group.id)
+    before = count_demo_content(db_session, group.id)
+
+    monkeypatch.setattr(db, "SessionLocal", TestSessionLocal)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "n")
+
+    code = main(["--group-id", str(group.id)])
+
+    assert code == 0
+    after = count_demo_content(db_session, group.id)
+    assert after == before
+
+
+def test_yes_플래그가_확인없이_채운다(db_session, group_with_member, monkeypatch):
+    """--yes면 프롬프트 없이 바로 지우고 채워야 한다."""
+    import db
+    from tests.conftest import TestSessionLocal
+
+    group, user = group_with_member
+    monkeypatch.setattr(db, "SessionLocal", TestSessionLocal)
+
+    code = main(["--group-id", str(group.id), "--yes"])
+
+    assert code == 0
+    counts = count_demo_content(db_session, group.id)
+    assert counts["clients"] == 3
+    assert counts["documents"] == 4
+    assert counts["commitments"] == 9
+    assert counts["todos"] == 8
+    assert counts["schedules"] == 4
+
+    assert db_session.get(User, user.id) is not None
+    assert db_session.query(GroupMembership).filter_by(group_id=group.id).count() == 1
