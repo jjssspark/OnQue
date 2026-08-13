@@ -1,6 +1,9 @@
 from datetime import date
 
-from scripts.seed_demo import build_demo_data
+import pytest
+
+from models import Client, Commitment, Group, GroupMembership, Schedule, Todo, User
+from scripts.seed_demo import build_demo_data, clear_demo_content, count_demo_content
 
 TODAY = date(2026, 8, 13)
 
@@ -83,3 +86,80 @@ def test_문서_카테고리가_유효값이다():
     valid = {"기획", "디자인", "개발", "마케팅", "기타"}
     data = build_demo_data(TODAY)
     assert all(d["category"] in valid for d in data.documents)
+
+
+@pytest.fixture()
+def group_with_member(db_session):
+    """그룹 하나와 그 안의 멤버 하나. 시드가 사람을 안 지우는지 확인하는 데 쓴다."""
+    user = User(email="demo@example.com", password_hash="x", name="데모")
+    db_session.add(user)
+    db_session.flush()
+    group = Group(name="시연팀", created_by=user.id)
+    db_session.add(group)
+    db_session.flush()
+    db_session.add(GroupMembership(group_id=group.id, user_id=user.id, role="admin"))
+    db_session.commit()
+    return group, user
+
+
+def _put_content(session, group_id):
+    session.add(Client(group_id=group_id, name="지울 클라이언트"))
+    session.add(Todo(group_id=group_id, content="지울 할 일"))
+    session.add(Schedule(group_id=group_id, title="지울 일정", scheduled_date=TODAY))
+    session.add(
+        Commitment(
+            group_id=group_id,
+            content="지울 약속",
+            status="proposed",
+            source_type="call",
+            evidence="근거",
+        )
+    )
+    session.commit()
+
+
+def test_콘텐츠를_지운다(db_session, group_with_member):
+    group, _ = group_with_member
+    _put_content(db_session, group.id)
+
+    clear_demo_content(db_session, group.id)
+    db_session.commit()
+
+    assert count_demo_content(db_session, group.id) == {
+        "commitments": 0,
+        "todos": 0,
+        "schedules": 0,
+        "documents": 0,
+        "clients": 0,
+    }
+
+
+def test_사람과_멤버십은_안_지운다(db_session, group_with_member):
+    """이 설계에서 가장 중요한 안전 요건이다. 동료가 튕겨나가면 안 된다."""
+    group, user = group_with_member
+    _put_content(db_session, group.id)
+
+    clear_demo_content(db_session, group.id)
+    db_session.commit()
+
+    assert db_session.get(User, user.id) is not None
+    assert db_session.get(Group, group.id) is not None
+    memberships = db_session.query(GroupMembership).filter_by(group_id=group.id).count()
+    assert memberships == 1
+
+
+def test_다른_그룹은_안_건드린다(db_session, group_with_member):
+    group, user = group_with_member
+    other = Group(name="남의 팀", created_by=user.id)
+    db_session.add(other)
+    db_session.commit()
+    _put_content(db_session, group.id)
+    _put_content(db_session, other.id)
+
+    clear_demo_content(db_session, group.id)
+    db_session.commit()
+
+    counts = count_demo_content(db_session, other.id)
+    assert counts["todos"] == 1
+    assert counts["commitments"] == 1
+    assert counts["clients"] == 1

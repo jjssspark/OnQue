@@ -13,7 +13,15 @@ from pathlib import Path
 # scripts/를 직접 실행해도 저장소 루트의 models·db를 찾게 한다.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from sqlalchemy import delete, func, select
+
+from models import Client, Commitment, Document, Schedule, Todo
+
 CLIENT_NAMES = ("한빛물산", "대성기업", "서진테크")
+
+# 삭제 순서는 참조 방향의 역순이다. commitments.client_id가 clients를 참조하므로
+# clients를 먼저 지우면 FK 위반으로 죽는다.
+CONTENT_MODELS = (Commitment, Todo, Schedule, Document, Client)
 
 
 @dataclass(frozen=True)
@@ -183,3 +191,29 @@ def build_demo_data(today: date) -> DemoData:
         todos=todos,
         schedules=schedules,
     )
+
+
+def count_demo_content(session, group_id: int) -> dict[str, int]:
+    """지울 대상 건수를 테이블별로 센다. 실행 전 사용자에게 보여주는 용도다."""
+    return {
+        model.__tablename__: session.scalar(
+            select(func.count()).select_from(model).where(model.group_id == group_id)
+        )
+        for model in CONTENT_MODELS
+    }
+
+
+def clear_demo_content(session, group_id: int) -> dict[str, int]:
+    """대상 그룹의 콘텐츠만 지운다.
+
+    사용자·그룹 멤버십·그룹·초대 기록은 건드리지 않는다. 시연 팀에는 초대로
+    들어온 실제 동료 계정이 있고, 시드를 다시 돌릴 때 그 사람들이 튕겨나가면
+    다시 초대해야 한다.
+
+    커밋하지 않는다. 호출자가 삽입까지 한 트랜잭션으로 묶는다.
+    """
+    deleted: dict[str, int] = {}
+    for model in CONTENT_MODELS:
+        result = session.execute(delete(model).where(model.group_id == group_id))
+        deleted[model.__tablename__] = result.rowcount
+    return deleted
