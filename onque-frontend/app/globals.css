@@ -1,30 +1,64 @@
 @import "tailwindcss";
 
 :root {
-  /* 다크 워크스페이스. 랜딩·로그인·스플래시가 쓰던 톤을 앱 전체로 확장해
-     로그인 순간 화면이 밝게 튀는 끊김을 없앤다. */
-  --background: #0a0c12;
-  --foreground: #e9ebf3;
-  --surface: #141722;
-  --border: #262a3a;
-  --sidebar: #070810;
+  /* 표면 3단 — 선이 아니라 밝기 차로 구역을 나눈다. R1의 핵심. */
+  --background: #07080e;
+  --surface: #12151f;
+  --surface-sunken: #0c0e16;
+  --surface-hover: #171b28;
+  --sidebar: #04050a;
   --sidebar-foreground: #c9cbd6;
-  /* 어두운 배경에서 #3452eb는 대비가 모자라 한 단계 밝힌다. */
-  --brand: #6183ff;
-  --brand-foreground: #08090f;
-  --accent: #f0954a;
+
+  /* 글자 3등급. 모두 --surface 위에서 4.5:1을 넘긴다.
+     --fg-disabled만 4.0:1이라 읽어야 하는 글자에 쓰지 않는다. */
+  --foreground: #e8eaf4;
+  --fg-muted: #a8aec5;
+  --fg-dim: #868da8;
+  --fg-disabled: #6f7590;
+
+  --brand: #7c8cff;
+  --brand-foreground: #06070d;
+
+  /* 상태색. 색만으로 구분하지 않고 항상 글자를 함께 쓴다. */
+  --late: #ff6b5e;
+  --late-bg: #ff6b5e22;
+  --late-fg: #ff9c92;
+  --soon: #f5a623;
+  --soon-bg: #f5a62322;
+  --soon-fg: #f7c173;
+
+  --hairline: #ffffff0d;
+
+  /* 개편하지 않은 9개 화면이 border-border에 의존한다. 지우면 그 화면들이
+     한 덩어리로 뭉개지므로, 값만 약화시켜 새 밝기 대비로 넘어가게 한다. */
+  --border: #171a24;
+
+  /* 기존 참조를 살리기 위한 별칭. 새 코드는 --soon을 쓴다. */
+  --accent: var(--soon);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-hover: var(--surface-hover);
   --color-border: var(--border);
+  --color-hairline: var(--hairline);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-brand: var(--brand);
   --color-brand-foreground: var(--brand-foreground);
   --color-accent: var(--accent);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-dim: var(--fg-dim);
+  --color-fg-disabled: var(--fg-disabled);
+  --color-late: var(--late);
+  --color-late-bg: var(--late-bg);
+  --color-late-fg: var(--late-fg);
+  --color-soon: var(--soon);
+  --color-soon-bg: var(--soon-bg);
+  --color-soon-fg: var(--soon-fg);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
