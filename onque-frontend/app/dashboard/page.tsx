@@ -4,11 +4,19 @@ import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import { useWorkspace } from '@/components/WorkspaceContext';
-import { MetricStrip, type Metric } from '@/components/MetricStrip';
+import { type Metric } from '@/components/MetricStrip';
 import CommitmentPanel from '@/components/CommitmentPanel';
 import ClientPanel from '@/components/ClientPanel';
 import { ReceivedInvitations } from '@/components/ReceivedInvitations';
-import { getDocuments, type DocumentRecord } from '@/lib/api';
+import { PriorityStream } from '@/components/dashboard/PriorityStream';
+import { SummaryColumn } from '@/components/dashboard/SummaryColumn';
+import { buildPriorityStream } from '@/lib/priority';
+import {
+  getCommitments,
+  getDocuments,
+  type CommitmentRecord,
+  type DocumentRecord,
+} from '@/lib/api';
 
 const MODULES = [
   { href: '/calls', title: '통화 요약', description: '녹음 파일을 콜 리포트로' },
@@ -31,17 +39,13 @@ function shiftDays(date: Date, days: number): Date {
   return next;
 }
 
-function dueLabel(dueDate: string, todayKey: string): { text: string; alert: boolean } {
-  if (dueDate < todayKey) return { text: '지연', alert: true };
-  if (dueDate === todayKey) return { text: '오늘 마감', alert: true };
-  return { text: `마감 ${dueDate}`, alert: false };
-}
-
 export default function DashboardPage() {
   const { user, groups, refreshMe } = useAuth();
   const { todos, schedules, currentGroupId, toggleTodo, error: workspaceError } = useWorkspace();
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [documentsError, setDocumentsError] = useState<string | null>(null);
+  const [commitments, setCommitments] = useState<CommitmentRecord[]>([]);
+  const [commitmentsError, setCommitmentsError] = useState<string | null>(null);
 
   // 날짜 계산을 마운트 이후로 미룬다 — 서버와 클라이언트의 시각이 달라 생기는
   // 하이드레이션 불일치를 피하기 위해서다.
@@ -64,6 +68,26 @@ export default function DashboardPage() {
         setDocumentsError(
           err instanceof Error ? err.message : '요약 이력을 불러오지 못했습니다.',
         );
+      });
+  }, [currentGroupId]);
+
+  useEffect(() => {
+    if (currentGroupId === null) {
+      setCommitments([]);
+      setCommitmentsError(null);
+      return;
+    }
+    Promise.all([
+      getCommitments(currentGroupId, 'proposed', 100),
+      getCommitments(currentGroupId, 'confirmed', 100),
+    ])
+      .then(([proposed, confirmed]) => {
+        setCommitments([...proposed, ...confirmed]);
+        setCommitmentsError(null);
+      })
+      .catch((err: unknown) => {
+        setCommitments([]);
+        setCommitmentsError(err instanceof Error ? err.message : '약속을 불러오지 못했습니다.');
       });
   }, [currentGroupId]);
 
@@ -92,17 +116,10 @@ export default function DashboardPage() {
       .slice(0, 5);
   }, [schedules, today, todayKey]);
 
-  // 마감 임박한 것부터 보여준다. 마감일 없는 항목은 뒤로 민다.
-  const priorityTodos = useMemo(() => {
-    return [...openTodos]
-      .sort((a, b) => {
-        if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
-        if (a.due_date) return -1;
-        if (b.due_date) return 1;
-        return 0;
-      })
-      .slice(0, 6);
-  }, [openTodos]);
+  const priorityStream = useMemo(() => {
+    if (!todayKey) return [];
+    return buildPriorityStream(commitments, todos, todayKey).slice(0, 8);
+  }, [commitments, todos, todayKey]);
 
   const metrics: Metric[] = [
     { label: 'Open', value: openTodos.length, hint: '진행 중인 할 일' },
@@ -123,20 +140,20 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10">
+    <div className="mx-auto max-w-6xl px-6 py-10">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="font-mono text-xs uppercase tracking-widest text-brand">Dashboard</p>
           <h1 className="mt-1 text-2xl font-bold text-foreground">업무 현황</h1>
         </div>
-        <p className="text-xs text-foreground/40">
+        <p className="text-xs text-fg-dim">
           {user?.name}
           {groupName && ` · ${groupName}`}
           {todayKey && ` · ${todayKey}`}
         </p>
       </div>
 
-      {(workspaceError || documentsError) && (
+      {(workspaceError || documentsError || commitmentsError) && (
         <div
           role="alert"
           className="mt-5 rounded-xl border border-red-500/30 bg-red-500/[0.08] px-4 py-3 text-sm text-red-300"
@@ -148,137 +165,40 @@ export default function DashboardPage() {
           </p>
           <ul className="mt-2 space-y-0.5 font-mono text-[11px] opacity-70">
             {workspaceError && <li>할 일·일정: {workspaceError}</li>}
+            {commitmentsError && <li>약속: {commitmentsError}</li>}
             {documentsError && <li>요약 이력: {documentsError}</li>}
           </ul>
         </div>
       )}
 
-      <div className="mt-6">
-        <MetricStrip metrics={metrics} />
-      </div>
-
-      <div className="mt-6 grid gap-5 lg:grid-cols-[2fr_1fr]">
-        <CommitmentPanel groupId={currentGroupId} />
-        <ClientPanel groupId={currentGroupId} />
-      </div>
-
-      <div className="mt-6 grid gap-5 lg:grid-cols-[1.4fr_1fr]">
-        <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
-          <div className="flex items-baseline justify-between gap-3">
-            <h2 className="text-sm font-bold text-foreground">우선 처리할 일</h2>
-            <Link href="/chat" className="text-[11px] text-foreground/40 hover:text-brand">
-              채팅에서 추가
-            </Link>
-          </div>
-
-          {priorityTodos.length === 0 ? (
-            <p className="mt-6 rounded-xl border border-dashed border-border p-8 text-center text-sm text-foreground/40">
-              처리할 할 일이 없습니다.
-            </p>
-          ) : (
-            <ul className="mt-3 divide-y divide-border">
-              {priorityTodos.map((todo) => {
-                const due = todo.due_date && todayKey ? dueLabel(todo.due_date, todayKey) : null;
-                return (
-                  <li key={todo.id} className="flex items-start gap-3 py-3">
-                    <input
-                      type="checkbox"
-                      checked={todo.is_done}
-                      onChange={(e) => toggleTodo(todo.id, e.target.checked)}
-                      className="mt-0.5 h-4 w-4 shrink-0"
-                      aria-label={`${todo.content} 완료 처리`}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-foreground/90">{todo.content}</p>
-                      {due && (
-                        <p
-                          className={`mt-0.5 font-mono text-[11px] ${
-                            due.alert ? 'text-red-500' : 'text-foreground/40'
-                          }`}
-                        >
-                          {due.text}
-                        </p>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-
-        <div className="space-y-5">
-          <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
-            <h2 className="text-sm font-bold text-foreground">다가오는 일정</h2>
-            {upcomingSchedules.length === 0 ? (
-              <p className="mt-4 text-xs text-foreground/40">7일 안에 예정된 일정이 없습니다.</p>
-            ) : (
-              <ul className="mt-3 space-y-2">
-                {upcomingSchedules.map((schedule) => (
-                  <li
-                    key={schedule.id}
-                    className="flex items-center gap-3 rounded-lg border border-border bg-background px-3 py-2"
-                  >
-                    <span className="shrink-0 font-mono text-[11px] text-brand">
-                      {schedule.scheduled_date.slice(5)}
-                    </span>
-                    <span className="truncate text-xs text-foreground/80">{schedule.title}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-sm font-bold text-foreground">최근 요약</h2>
-              <Link href="/history" className="text-[11px] text-foreground/40 hover:text-brand">
-                전체 보기
-              </Link>
-            </div>
-            {documents.length === 0 ? (
-              <p className="mt-4 text-xs text-foreground/40">
-                아직 요약한 통화·문서가 없습니다.
-              </p>
-            ) : (
-              <ul className="mt-3 space-y-2">
-                {documents.slice(0, 4).map((doc) => (
-                  <li key={doc.id}>
-                    <Link
-                      href="/history"
-                      className="block rounded-lg border border-border bg-background px-3 py-2.5 transition-colors hover:border-brand/40"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="shrink-0 rounded-full bg-brand/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand">
-                          {doc.category}
-                        </span>
-                        <span className="truncate text-xs font-semibold text-foreground">
-                          {doc.filename}
-                        </span>
-                      </div>
-                      <p className="mt-1 truncate text-[11px] text-foreground/45">
-                        {doc.structured?.headline || doc.summary.replace(/\n/g, ' ')}
-                      </p>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+      <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_260px] xl:grid-cols-[1fr_280px]">
+        {/* 좁은 화면에서는 요약이 본류 위로 올라간다. */}
+        <div className="order-2 lg:order-1">
+          <PriorityStream items={priorityStream} onCompleteTodo={(id) => toggleTodo(id, true)} />
+        </div>
+        <div className="order-1 lg:order-2">
+          <SummaryColumn metrics={metrics} schedules={upcomingSchedules} documents={documents} />
         </div>
       </div>
 
-      <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {MODULES.map((mod) => (
-          <Link
-            key={mod.href}
-            href={mod.href}
-            className="group rounded-xl border border-border bg-surface px-4 py-3.5 transition-all hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-md"
-          >
-            <p className="text-xs font-bold text-foreground group-hover:text-brand">{mod.title}</p>
-            <p className="mt-0.5 text-[11px] text-foreground/45">{mod.description}</p>
-          </Link>
-        ))}
+      <div id="commitments" className="mt-8 scroll-mt-6">
+        <CommitmentPanel groupId={currentGroupId} />
+      </div>
+
+      <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_280px]">
+        <div className="grid gap-3 sm:grid-cols-2">
+          {MODULES.map((mod) => (
+            <Link
+              key={mod.href}
+              href={mod.href}
+              className="group rounded-xl bg-surface px-4 py-3.5 transition-[transform,background-color] duration-300 ease-[cubic-bezier(.16,1,.3,1)] hover:-translate-y-[3px] hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              <p className="text-xs font-bold text-foreground group-hover:text-brand">{mod.title}</p>
+              <p className="mt-0.5 text-[11px] text-fg-dim">{mod.description}</p>
+            </Link>
+          ))}
+        </div>
+        <ClientPanel groupId={currentGroupId} />
       </div>
     </div>
   );
