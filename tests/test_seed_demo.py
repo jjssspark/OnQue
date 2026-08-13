@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 
 from models import Client, Commitment, Group, GroupMembership, Schedule, Todo, User
-from scripts.seed_demo import build_demo_data, clear_demo_content, count_demo_content
+from scripts.seed_demo import build_demo_data, clear_demo_content, count_demo_content, seed_demo
 
 TODAY = date(2026, 8, 13)
 
@@ -163,3 +163,54 @@ def test_다른_그룹은_안_건드린다(db_session, group_with_member):
     assert counts["todos"] == 1
     assert counts["commitments"] == 1
     assert counts["clients"] == 1
+
+
+def test_넣은_뒤_건수가_맞는다(db_session, group_with_member):
+    group, _ = group_with_member
+    seed_demo(db_session, group.id, TODAY)
+    db_session.commit()
+
+    counts = count_demo_content(db_session, group.id)
+    assert counts["clients"] == 3
+    assert counts["documents"] == 4
+    assert counts["commitments"] == 9
+    assert counts["todos"] == 8
+    assert counts["schedules"] == 4
+
+
+def test_두_번_돌려도_같은_상태다(db_session, group_with_member):
+    """리허설을 몇 번 해도 한 번 더 돌리면 처음 상태로 돌아가야 한다."""
+    group, _ = group_with_member
+    seed_demo(db_session, group.id, TODAY)
+    db_session.commit()
+    first = count_demo_content(db_session, group.id)
+
+    seed_demo(db_session, group.id, TODAY)
+    db_session.commit()
+    second = count_demo_content(db_session, group.id)
+
+    assert first == second
+
+
+def test_약속이_클라이언트에_연결된다(db_session, group_with_member):
+    group, _ = group_with_member
+    seed_demo(db_session, group.id, TODAY)
+    db_session.commit()
+
+    linked = (
+        db_session.query(Commitment)
+        .filter(Commitment.group_id == group.id, Commitment.client_id.isnot(None))
+        .count()
+    )
+    assert linked == 8  # client_index가 None인 약속 1건만 미연결
+
+
+def test_재실행이_멤버십을_안_건드린다(db_session, group_with_member):
+    group, user = group_with_member
+    seed_demo(db_session, group.id, TODAY)
+    db_session.commit()
+    seed_demo(db_session, group.id, TODAY)
+    db_session.commit()
+
+    assert db_session.get(User, user.id) is not None
+    assert db_session.query(GroupMembership).filter_by(group_id=group.id).count() == 1

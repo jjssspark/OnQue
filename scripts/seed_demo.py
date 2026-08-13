@@ -217,3 +217,45 @@ def clear_demo_content(session, group_id: int) -> dict[str, int]:
         result = session.execute(delete(model).where(model.group_id == group_id))
         deleted[model.__tablename__] = result.rowcount
     return deleted
+
+
+def seed_demo(session, group_id: int, today: date) -> dict[str, int]:
+    """대상 그룹의 콘텐츠를 지우고 데모 데이터로 채운다.
+
+    커밋하지 않는다. 호출자가 커밋한다 - 삭제와 삽입이 한 트랜잭션이어야
+    중간에 실패했을 때 반쯤 지워진 상태로 남지 않는다.
+    """
+    clear_demo_content(session, group_id)
+    data = build_demo_data(today)
+
+    clients = [Client(group_id=group_id, name=name) for name in data.clients]
+    session.add_all(clients)
+    session.flush()  # client_id를 얻어야 약속을 연결할 수 있다
+    client_ids = [c.id for c in clients]
+
+    for row in data.documents:
+        session.add(Document(group_id=group_id, is_template=False, **row))
+
+    for row in data.commitments:
+        index = row["client_index"]
+        session.add(
+            Commitment(
+                group_id=group_id,
+                client_id=None if index is None else client_ids[index],
+                content=row["content"],
+                due_date=row["due_date"],
+                status=row["status"],
+                source_type=row["source_type"],
+                evidence=row["evidence"],
+                created_at=row["created_at"],
+            )
+        )
+
+    for row in data.todos:
+        session.add(Todo(group_id=group_id, **row))
+
+    for row in data.schedules:
+        session.add(Schedule(group_id=group_id, **row))
+
+    session.flush()
+    return count_demo_content(session, group_id)
