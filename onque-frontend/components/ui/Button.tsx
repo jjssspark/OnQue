@@ -23,6 +23,11 @@ type ButtonClassesOptions = {
 
 // 다음 태스크의 약속 카드는 <a> 안에 <button>을 넣지 않고 <Link>에 이
 // 클래스를 직접 입힌다. 그래서 클래스 문자열을 함수로 빼 export 한다.
+//
+// transition 목록의 filter는 허용 목록(transform/opacity/background-color)
+// 밖이지만 의도적으로 남긴다. filter는 GPU 합성이라 리플로우가 없다 —
+// 제약이 막으려는 해악(레이아웃 스래싱)이 애초에 발생하지 않는다.
+// hover:brightness-110의 부드러운 밝기 변화는 이것 없이는 즉시 튄다.
 export function buttonClasses({
   variant = 'primary',
   size = 'md',
