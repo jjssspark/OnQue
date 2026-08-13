@@ -8,6 +8,8 @@ import type { PriorityItem } from '@/lib/priority';
 
 type Props = {
   items: PriorityItem[];
+  /** 아직 조회 중이면 빈 목록이 "처리할 것 없음"으로 오해되지 않도록 구분한다. */
+  isLoading?: boolean;
   onCompleteTodo: (id: number) => void;
 };
 
@@ -17,11 +19,13 @@ function dueText(item: PriorityItem): string {
   return '기한 없음';
 }
 
-export function PriorityStream({ items, onCompleteTodo }: Props) {
+export function PriorityStream({ items, isLoading = false, onCompleteTodo }: Props) {
   if (items.length === 0) {
     return (
       <Surface level="sunken" className="p-10 text-center">
-        <p className="text-sm text-fg-dim">지금 처리할 것이 없습니다.</p>
+        <p className="text-sm text-fg-dim">
+          {isLoading ? '불러오는 중...' : '지금 처리할 것이 없습니다.'}
+        </p>
       </Surface>
     );
   }

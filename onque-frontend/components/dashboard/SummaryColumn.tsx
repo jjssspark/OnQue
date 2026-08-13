@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Surface } from '@/components/ui/Surface';
-import type { Metric } from '@/components/MetricStrip';
+import type { Metric } from '@/lib/metrics';
 import type { DocumentRecord, ScheduleItem } from '@/lib/api';
 
 type Props = {
