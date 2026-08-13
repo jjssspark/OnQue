@@ -5,6 +5,7 @@
 401이 돌아오면 정상이다 — 서버는 살아 있고 인증만 없는 상태다.
 """
 
+import json
 import sys
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -43,6 +44,50 @@ def _ts(today: date, offset: int) -> datetime:
     return datetime(d.year, d.month, d.day, 12, tzinfo=timezone.utc)
 
 
+def _summary_json(
+    today: date,
+    *,
+    category: str,
+    headline: str,
+    key_points: tuple[str, ...],
+    requests: tuple[str, ...],
+    action_items: tuple[tuple[str, int | None, str], ...],
+    notes: str,
+    commitments: tuple[tuple[str, str, int | None, str], ...],
+) -> str:
+    """gemini_service.normalize_summary가 만드는 것과 같은 모양을 손으로 채운다.
+
+    Gemini를 부르지 않는다 — 문서별 summary 평문과 같은 사실을 옮겨 적은 값이다.
+    action_items/commitments의 날짜는 offset(정수, 오늘 기준 일수)로 받아 여기서
+    절대 날짜 문자열로 바꾼다. 절대 날짜를 데이터에 직접 박지 않기 위해서다.
+    """
+
+    def _resolve_date(offset: int | None) -> str:
+        return _day(today, offset).isoformat() if offset is not None else ""
+
+    payload = {
+        "category": category,
+        "headline": headline,
+        "key_points": list(key_points),
+        "requests": list(requests),
+        "action_items": [
+            {"content": content, "due_date": _resolve_date(offset), "priority": priority}
+            for content, offset, priority in action_items
+        ],
+        "notes": notes,
+        "commitments": [
+            {
+                "content": content,
+                "client_name": client_name,
+                "due_date": _resolve_date(offset),
+                "evidence": evidence,
+            }
+            for content, client_name, offset, evidence in commitments
+        ],
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def build_demo_data(today: date) -> DemoData:
     """오늘을 기준으로 데모 데이터를 만든다.
 
@@ -54,10 +99,36 @@ def build_demo_data(today: date) -> DemoData:
     documents = (
         {
             "source_type": "call",
-            "category": "기타",
+            # main.py가 통화 업로드에 항상 "통화"를 하드코딩한다. 실제 파이프라인이
+            # 절대 만들지 않는 "기타"를 넣으면 /history의 통화 필터에서 사라진다.
+            "category": "통화",
             "filename": "통화_한빛물산_0730.m4a",
             "summary": "한빛물산 김 과장과 통화. 재고 확인 후 견적서를 다시 보내기로 함. 납기는 2주 예상.",
             "created_at": _ts(today, -14),
+            "summary_json": _summary_json(
+                today,
+                # normalize_summary는 _CLASSIFIABLE_CATEGORIES 밖의 값(통화 포함)을
+                # 전부 "기타"로 보정한다 — 컬럼은 "통화"지만 JSON 안쪽은 "기타"가 맞다.
+                category="기타",
+                headline="한빛물산 김 과장과 재고 확인 후 견적서 재발송을 통화로 협의",
+                key_points=(
+                    "재고 확인 후 견적서를 다시 보내기로 함",
+                    "예상 납기는 2주",
+                ),
+                requests=(),
+                action_items=(
+                    ("한빛물산에 수정 견적서 재발송", -13, "high"),
+                ),
+                notes="고객 톤은 우호적. 단가 조건 변경 요청은 없었음.",
+                commitments=(
+                    (
+                        "한빛물산에 수정 견적서 회신",
+                        "한빛물산",
+                        1,
+                        "통화 중 '내일까지 다시 보내드릴게요'라고 말함",
+                    ),
+                ),
+            ),
         },
         {
             "source_type": "document",
@@ -65,13 +136,51 @@ def build_demo_data(today: date) -> DemoData:
             "filename": "대성기업_견적서.pdf",
             "summary": "대성기업 견적서 검토. 단가는 합의 범위이나 결제 조건이 기존과 다름. 계약 전 확인 필요.",
             "created_at": _ts(today, -9),
+            "summary_json": _summary_json(
+                today,
+                category="기획",
+                headline="대성기업 견적서 검토 — 단가는 합의 범위, 결제 조건은 확인 필요",
+                key_points=(
+                    "단가는 기존 합의 범위 내",
+                    "결제 조건이 기존 계약과 다르게 기재됨",
+                    "계약 체결 전 조건 확인 필요",
+                ),
+                requests=(),
+                action_items=(
+                    ("대성기업 결제 조건 확인 후 회신", -4, "high"),
+                ),
+                notes="결제 조건 변경 사유가 확인되기 전에는 계약 진행을 보류할 것.",
+                commitments=(),
+            ),
         },
         {
             "source_type": "call",
-            "category": "기타",
+            "category": "통화",
             "filename": "통화_서진테크_0808.m4a",
             "summary": "서진테크 담당자 교체 안내. 신규 담당자에게 단가표를 다시 전달하기로 함.",
             "created_at": _ts(today, -5),
+            "summary_json": _summary_json(
+                today,
+                category="기타",
+                headline="서진테크 담당자 교체 안내 및 단가표 재전달 협의",
+                key_points=(
+                    "기존 담당자에서 신규 담당자로 교체됨",
+                    "신규 담당자에게 단가표를 다시 전달하기로 함",
+                ),
+                requests=("신규 담당자에게 단가표를 재전송해달라는 요청",),
+                action_items=(
+                    ("신규 담당자 연락처 시스템에 등록", -3, "normal"),
+                ),
+                notes="",
+                commitments=(
+                    (
+                        "서진테크 신규 단가표 전달",
+                        "서진테크",
+                        -2,
+                        "담당자 교체 통화에서 단가표 재전달을 약속함",
+                    ),
+                ),
+            ),
         },
         {
             "source_type": "document",
@@ -79,6 +188,22 @@ def build_demo_data(today: date) -> DemoData:
             "filename": "회의록_주간점검.txt",
             "summary": "주간 점검 회의록. 이번 주 배포 일정과 이슈 세 건을 정리함. 다음 점검은 다음 주 동일 시간.",
             "created_at": _ts(today, -2),
+            "summary_json": _summary_json(
+                today,
+                category="개발",
+                headline="주간 점검 회의 — 배포 일정 확정, 이슈 3건 정리",
+                key_points=(
+                    "이번 주 배포 일정 확정",
+                    "이슈 3건 정리 및 담당자 배정",
+                    "다음 점검은 다음 주 동일 시간",
+                ),
+                requests=(),
+                action_items=(
+                    ("배포 후 이슈 3건 조치 확인", 3, "high"),
+                ),
+                notes="다음 점검 일정은 캘린더에 등록 완료.",
+                commitments=(),
+            ),
         },
     )
 

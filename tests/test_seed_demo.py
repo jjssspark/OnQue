@@ -1,8 +1,10 @@
+import json
 from datetime import date
 
 import pytest
 
-from models import Client, Commitment, Group, GroupMembership, Schedule, Todo, User
+from gemini_service import SUMMARY_PRIORITIES
+from models import Client, Commitment, DOCUMENT_CATEGORIES, Group, GroupMembership, Schedule, Todo, User
 from scripts.seed_demo import build_demo_data, clear_demo_content, count_demo_content, main, seed_demo
 
 TODAY = date(2026, 8, 13)
@@ -83,9 +85,47 @@ def test_약속_필수필드가_비지_않는다():
 
 
 def test_문서_카테고리가_유효값이다():
-    valid = {"기획", "디자인", "개발", "마케팅", "기타"}
+    """손으로 베낀 값 목록이 아니라 실제 DB CHECK 제약(DOCUMENT_CATEGORIES)을 기준으로 삼는다.
+    한 번 여기서 값이 어긋난 적이 있다 — 스키마가 바뀌면 이 테스트도 같이 따라가야 한다."""
     data = build_demo_data(TODAY)
-    assert all(d["category"] in valid for d in data.documents)
+    assert all(d["category"] in DOCUMENT_CATEGORIES for d in data.documents)
+
+
+def test_통화_문서의_카테고리는_통화다():
+    """main.py가 실제 통화 업로드에 항상 category="통화"를 하드코딩한다.
+    시드 데이터가 다른 값을 쓰면 /history의 통화 필터 칩에서 사라진다."""
+    data = build_demo_data(TODAY)
+    call_docs = [d for d in data.documents if d["source_type"] == "call"]
+    assert call_docs
+    assert all(d["category"] == "통화" for d in call_docs)
+
+
+def test_요약_json이_정상화된_구조와_같은_모양이다():
+    """gemini_service.normalize_summary가 만드는 것과 같은 7개 키가 다 있는지,
+    action_items 항목 모양이 실제 파이프라인과 같은지 확인한다.
+    프론트(SummaryReport.tsx)는 이 키들이 없으면 그대로 죽는다."""
+    expected_keys = {
+        "category", "headline", "key_points", "requests",
+        "action_items", "notes", "commitments",
+    }
+    data = build_demo_data(TODAY)
+    for doc in data.documents:
+        structured = json.loads(doc["summary_json"])
+        assert set(structured.keys()) == expected_keys
+        for item in structured["action_items"]:
+            assert set(item.keys()) == {"content", "due_date", "priority"}
+            assert item["priority"] in SUMMARY_PRIORITIES
+
+
+def test_통화_문서의_요약_json_카테고리는_기타다():
+    """normalize_summary는 _CLASSIFIABLE_CATEGORIES 밖의 값(통화 포함)을 전부 "기타"로
+    보정한다. 컬럼은 "통화"이지만 summary_json 안쪽 category는 "기타"여야 실제
+    파이프라인이 저장했을 값과 같다."""
+    data = build_demo_data(TODAY)
+    call_docs = [d for d in data.documents if d["source_type"] == "call"]
+    for doc in call_docs:
+        structured = json.loads(doc["summary_json"])
+        assert structured["category"] == "기타"
 
 
 @pytest.fixture()
