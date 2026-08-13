@@ -201,3 +201,14 @@ body {
     margin-top: 0.7rem;
   }
 }
+
+/* 기한 지난 항목의 점. 색만으로 알리지 않고 옆에 "N일 지남" 글자가 함께 있다. */
+@keyframes pulse-late {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 107, 94, 0.53);
+  }
+  60% {
+    box-shadow: 0 0 0 7px rgba(255, 107, 94, 0);
+  }
+}
