@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 
 from models import Client, Commitment, Group, GroupMembership, Schedule, Todo, User
-from scripts.seed_demo import build_demo_data, clear_demo_content, count_demo_content, seed_demo
+from scripts.seed_demo import build_demo_data, clear_demo_content, count_demo_content, main, seed_demo
 
 TODAY = date(2026, 8, 13)
 
@@ -214,3 +214,10 @@ def test_재실행이_멤버십을_안_건드린다(db_session, group_with_membe
 
     assert db_session.get(User, user.id) is not None
     assert db_session.query(GroupMembership).filter_by(group_id=group.id).count() == 1
+
+
+def test_그룹_미지정이면_거부한다():
+    """대상을 안 정한 채 지우는 스크립트가 도는 것을 막는다."""
+    with pytest.raises(SystemExit) as exc:
+        main([])
+    assert exc.value.code != 0

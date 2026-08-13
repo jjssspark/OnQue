@@ -259,3 +259,54 @@ def seed_demo(session, group_id: int, today: date) -> dict[str, int]:
 
     session.flush()
     return count_demo_content(session, group_id)
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="시연용 데모 데이터를 채운다. 대상 그룹의 콘텐츠만 지우고 사람은 건드리지 않는다."
+    )
+    parser.add_argument("--group-id", type=int, required=True, help="데모 데이터를 채울 그룹 ID")
+    parser.add_argument("--yes", action="store_true", help="확인 프롬프트를 건너뛴다. 반복 리허설용")
+    args = parser.parse_args(argv)
+
+    from db import SessionLocal
+    from models import Group
+
+    session = SessionLocal()
+    try:
+        group = session.get(Group, args.group_id)
+        if group is None:
+            print(f"그룹 {args.group_id}이 없습니다. 대시보드 좌상단 그룹 선택기에서 ID를 확인하세요.")
+            return 1
+
+        counts = count_demo_content(session, args.group_id)
+        print(f"대상 그룹: {group.name} (id={args.group_id})")
+        print("지울 것:")
+        for table, n in counts.items():
+            print(f"  {table}: {n}건")
+        print("지우지 않을 것: 사용자, 그룹 멤버십, 그룹, 초대 기록")
+
+        if not args.yes:
+            answer = input("진행할까요? [y/N] ").strip().lower()
+            if answer != "y":
+                print("취소했습니다. 아무것도 바꾸지 않았습니다.")
+                return 0
+
+        inserted = seed_demo(session, args.group_id, date.today())
+        session.commit()
+        print("채웠습니다:")
+        for table, n in inserted.items():
+            print(f"  {table}: {n}건")
+        return 0
+    except Exception:
+        session.rollback()
+        print("실패해서 전부 되돌렸습니다. 데이터는 실행 전 상태 그대로입니다.")
+        raise
+    finally:
+        session.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
