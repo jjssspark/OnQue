@@ -202,7 +202,13 @@ body {
   }
 }
 
-/* 기한 지난 항목의 점. 색만으로 알리지 않고 옆에 "N일 지남" 글자가 함께 있다. */
+/* 기한 지난 항목의 점. 색만으로 알리지 않고 옆에 "N일 지남" 글자가 함께 있다.
+   box-shadow는 transform/opacity/background-color 허용 목록 밖이지만 의도적으로
+   남긴다. box-shadow는 페인트만 유발하고 리플로우(레이아웃)는 일으키지 않는다 —
+   이 제약이 막으려는 해악은 레이아웃 스래싱인데, 그게 애초에 발생하지 않는다.
+   영향 범위도 7px 점 하나, 기한 지난 항목에만 걸린다. 모션 최소화에서는 이 파일
+   128행의 전역 규칙(animation-duration: 0.01ms, animation-iteration-count: 1)이
+   transition뿐 아니라 animation도 덮어 이 맥동을 멈춘다. */
 @keyframes pulse-late {
   0%,
   100% {
