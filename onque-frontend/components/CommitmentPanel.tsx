@@ -20,7 +20,13 @@ const SOURCE_LABEL: Record<CommitmentRecord['source_type'], string> = {
 // 누락이 곧 사고이므로 서버 최대값을 명시적으로 요청한다.
 const MAX_LIMIT = 100;
 
-export default function CommitmentPanel({ groupId }: { groupId: number }) {
+type Props = {
+  groupId: number;
+  /** 확정·무시가 반영된 뒤 호출된다. 대시보드가 자기 몫의 약속 조회를 다시 하도록 알린다. */
+  onChanged?: () => void;
+};
+
+export default function CommitmentPanel({ groupId, onChanged }: Props) {
   const [proposed, setProposed] = useState<CommitmentRecord[]>([]);
   const [proposedMeta, setProposedMeta] = useState<ListMeta | null>(null);
   const [tracked, setTracked] = useState<CommitmentRecord[]>([]);
@@ -81,6 +87,7 @@ export default function CommitmentPanel({ groupId }: { groupId: number }) {
     try {
       await bulkUpdateCommitments([...selected], status);
       await load();
+      onChanged?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : '처리에 실패했습니다.');
     } finally {
