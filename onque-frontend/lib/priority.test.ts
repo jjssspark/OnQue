@@ -108,6 +108,21 @@ describe('buildPriorityStream', () => {
     expect(byKey['todo-2']).toBe('할 일');
   });
 
+  it('확정 안 된 약속만 isUnconfirmed로 표시한다', () => {
+    const stream = buildPriorityStream(
+      [
+        commitment({ id: 1, status: 'proposed' }),
+        commitment({ id: 2, status: 'confirmed' }),
+      ],
+      [todo({ id: 3 })],
+      TODAY,
+    );
+    const byKey = Object.fromEntries(stream.map((i) => [i.key, i.isUnconfirmed]));
+    expect(byKey['commitment-1']).toBe(true);
+    expect(byKey['commitment-2']).toBe(false);
+    expect(byKey['todo-3']).toBe(false);
+  });
+
   it('빈 입력에 빈 배열을 돌려준다', () => {
     expect(buildPriorityStream([], [], TODAY)).toEqual([]);
   });
