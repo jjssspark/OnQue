@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -299,3 +300,53 @@ def test_create_todo_rejects_non_member(client):
 
     assert res.status_code == 403
     assert res.json()["error"]["code"] == "GROUP_ACCESS_FORBIDDEN"
+
+
+# ── 업로드 요약 프롬프트의 날짜 기준 ──────────────────────────
+
+
+def _capture_upload_prompt(monkeypatch, *, structured=SAMPLE_STRUCTURED):
+    """summarize_upload가 모델에 실제로 보낸 프롬프트를 잡아둔다."""
+
+    seen: dict = {}
+
+    def fake_generate(model, contents, config=None):
+        seen["contents"] = contents
+        return SimpleNamespace(text=json.dumps(structured, ensure_ascii=False))
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", fake_generate)
+    return seen
+
+
+def test_통화_요약_프롬프트에_오늘_날짜가_들어간다(monkeypatch):
+    """모델이 '이번 주 금요일'을 절대 날짜로 바꾸려면 오늘이 언제인지 알아야 한다.
+
+    실측: 이 줄이 없을 때 2026-08-15에 올린 통화의 마감이 2024-06-07로 나왔다.
+    학습 데이터 시점을 짚은 것으로, 799일 지난 할 일이 대시보드 맨 위에 떴다.
+    """
+    seen = _capture_upload_prompt(monkeypatch)
+    upload = UploadFile(filename="통화.wav", file=io.BytesIO(b"fake audio"))
+
+    asyncio.run(gemini_service.summarize_upload(upload, gemini_service.CALL_SUMMARY_PROMPT))
+
+    assert gemini_service.korean_date_context() in seen["contents"][-1]
+
+
+def test_문서_요약_프롬프트에_오늘_날짜가_들어간다(monkeypatch):
+    """문서 업로드도 같은 경로를 탄다. 통화만 고치면 절반만 고친 것이다."""
+    seen = _capture_upload_prompt(monkeypatch)
+    upload = UploadFile(filename="회의록.txt", file=io.BytesIO(b"fake text"))
+
+    asyncio.run(gemini_service.summarize_upload(upload, gemini_service.DOCUMENT_SUMMARY_PROMPT))
+
+    assert gemini_service.korean_date_context() in seen["contents"][-1]
+
+
+def test_날짜를_붙여도_원래_지시가_남는다(monkeypatch):
+    """날짜만 남기고 프롬프트를 덮어쓰면 요약 규격이 통째로 사라진다."""
+    seen = _capture_upload_prompt(monkeypatch)
+    upload = UploadFile(filename="통화.wav", file=io.BytesIO(b"fake audio"))
+
+    asyncio.run(gemini_service.summarize_upload(upload, gemini_service.CALL_SUMMARY_PROMPT))
+
+    assert gemini_service.CALL_SUMMARY_PROMPT in seen["contents"][-1]

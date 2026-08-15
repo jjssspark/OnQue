@@ -396,6 +396,13 @@ async def summarize_upload(file: UploadFile, prompt: str) -> tuple[dict | None, 
     것보다 구조만 포기하는 편이 낫다.
     """
 
+    # 오늘 날짜를 호출부가 아니라 여기서 붙인다. 프롬프트는 "이번 주 금요일"을
+    # YYYY-MM-DD로 바꾸라고 시키는데 기준일이 없으면 모델은 학습 시점을 짚는다 —
+    # 실측에서 2026-08-15에 올린 통화의 마감이 2024-06-07로 나와, 799일 지난
+    # 할 일이 대시보드 맨 위에 떴다. 다른 호출부 여섯 곳은 각자 붙이고 있었고
+    # 업로드 경로 둘만 빠져 있었어서, 또 잊지 못하도록 안쪽으로 옮겼다.
+    prompt = f"{korean_date_context()}\n\n{prompt}"
+
     try:
         suffix = os.path.splitext(file.filename or "")[1]
         with _timed("document.summarize.file_save"):
