@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- 작업 디렉터리는 `onque-frontend/`다. **이 폴더는 저장소 루트(`/Users/tina/Project/OnQue`)와 별개의 git 저장소다.** 커밋은 `onque-frontend/` 안에서 한다.
+- 작업 디렉터리는 `onque-frontend/`다. **별개의 git 저장소가 아니다** — `onque-frontend/.git`은 없고, 루트 저장소(`/Users/tina/Project/OnQue`)가 이 폴더의 파일 57개를 추적한다. 커밋은 루트 저장소에 쌓인다. (`CLAUDE.md`의 "자체 git 저장소" 서술은 낡았다.)
 - `onque-frontend/AGENTS.md`가 "이 Next.js는 기존 지식과 다르니 `node_modules/next/dist/docs/`를 먼저 읽으라"고 명시한다. Next API를 새로 쓰는 Task 8에서 반드시 지킨다.
 - `app/globals.css`의 디자인 토큰(`--background`, `--brand`, `--fg-muted` 등)을 **변경하지 않는다.** 새 색을 만들지 않고 기존 토큰만 쓴다.
 - 애니메이션은 `opacity`와 `transform`만 쓴다. `width`/`height`/`top`/`left`/`margin`/`padding`/`font-size`는 애니메이트하지 않는다.

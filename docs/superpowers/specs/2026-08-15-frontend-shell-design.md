@@ -287,4 +287,4 @@ components/dashboard/SummaryColumn.tsx   그리드 방향 (5단계)
 - `AuthGuard.tsx:62-78`의 주석이 `lg:h-screen` 결정의 근거(TS-029)와 그것을
   `lg` 미만으로 내리면 안 되는 이유를 기록하고 있다. 셸 높이 구조를 건드리지
   않는다.
-- `onque-frontend/`는 루트와 **별개의 git 저장소**다. 커밋 위치를 확인한다.
+- `onque-frontend/`는 별개의 git 저장소가 **아니다**. `onque-frontend/.git`은 없고 루트 저장소가 이 폴더의 파일 57개를 추적한다. `CLAUDE.md`의 "자체 git 저장소" 서술은 낡았다.
