@@ -137,11 +137,12 @@ export function SmartDashboardPanel() {
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-xs font-bold text-foreground/70">할 일 {openTodos.length}</h3>
         </div>
-        {/* h-5는 아래 <li>의 실제 높이다 — 체크박스와 한 줄 텍스트뿐이라 20px 남짓이고,
-            기한이 붙어도 35px이다. 처음엔 h-10을 줬는데 그러면 3행이 136px을 잡아
-            실제 75px보다 두 배 가까이 커서, 데이터가 도착할 때 패널이 오히려
-            줄어들었다. 스켈레톤이 자리를 잘못 잡으면 없느니만 못하다. */}
-        {loading && <SkeletonList rows={3} rowClassName="h-5" label="할 일 불러오는 중" />}
+        {/* h-9(36px)는 브라우저에서 실측한 값이다. 아래 <li>는 기한이 붙으면 35px,
+            없으면 20px인데 할 일 대부분이 추출된 약속에서 와서 기한을 갖는다.
+            3행이면 gap 포함 124px로 실측 120px에 거의 맞는다.
+            계산으로 두 번 틀렸던 자리다 — 기한 없는 행만 보고 h-5로 낮췄더니 44px
+            모자랐고, 그 전 h-10은 16px 넘쳤다. 결국 화면에서 재서 정했다. */}
+        {loading && <SkeletonList rows={3} rowClassName="h-9" label="할 일 불러오는 중" />}
         {!loading && openTodos.length === 0 && (
           <p className="text-xs text-foreground/40">진행 중인 할 일이 없습니다.</p>
         )}
