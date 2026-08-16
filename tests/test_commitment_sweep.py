@@ -477,3 +477,72 @@ def test_추출_실패해도_예산은_소비된_채로_남는다(client, db_ses
 
     assert commitment_service.maybe_sweep(db_session, group.id) == 0
     assert commitment_service.sweep_calls_used_today(db_session) == 1
+
+
+# ── 스윕 결과 기록 ────────────────────────────────────────────
+#
+# 스윕은 조용히 돌아서 사용자가 AI가 일하고 있다는 걸 모른다. 언제 돌았는지는
+# last_swept_at으로 알 수 있지만 "무엇을 얼마나 했는지"는 어디에도 남지 않는다.
+# 화면에 "대화 34개에서 2건 찾음"을 띄우려면 그 두 숫자가 필요하다.
+
+
+def test_스캔한_메시지와_찾은_약속_수를_남긴다(client, db_session, monkeypatch):
+    group = _seed_group(client, db_session)
+    _make_room(db_session, group.id, message_count=20, created_by=group.created_by)
+    _stub_extractor(monkeypatch, _SAMPLE)
+
+    commitment_service.maybe_sweep(db_session, group.id)
+
+    db_session.refresh(group)
+    assert group.last_sweep_scanned == 20
+    assert group.last_sweep_found == 1
+
+
+def test_여러_방을_훑으면_합계를_남긴다(client, db_session, monkeypatch):
+    group = _seed_group(client, db_session)
+    _make_room(db_session, group.id, message_count=15, created_by=group.created_by)
+    _make_room(
+        db_session, group.id, message_count=20,
+        created_by=group.created_by, name="B사 방",
+    )
+    _stub_extractor(monkeypatch, _SAMPLE)
+
+    commitment_service.maybe_sweep(db_session, group.id)
+
+    db_session.refresh(group)
+    assert group.last_sweep_scanned == 35
+    assert group.last_sweep_found == 2
+
+
+def test_훑을_게_없으면_직전_기록을_지우지_않는다(client, db_session, monkeypatch):
+    """0으로 덮어쓰면 "방금 아무것도 못 찾음"과 "10분간 새 대화가 없음"이
+    화면에서 같아 보인다. 뒤쪽이면 직전 성과를 계속 보여주는 게 맞다."""
+    group = _seed_group(client, db_session)
+    _make_room(db_session, group.id, message_count=15, created_by=group.created_by)
+    _stub_extractor(monkeypatch, _SAMPLE)
+
+    commitment_service.maybe_sweep(db_session, group.id)
+    db_session.refresh(group)
+    assert group.last_sweep_scanned == 15
+
+    # 새 메시지 없이 쿨다운만 풀고 다시 돌린다
+    group.last_swept_at = None
+    db_session.commit()
+    commitment_service.maybe_sweep(db_session, group.id)
+
+    db_session.refresh(group)
+    assert group.last_sweep_scanned == 15, "훑은 게 없는데 기록이 0으로 덮였다"
+    assert group.last_sweep_found == 1
+
+
+def test_약속을_못_찾아도_훑은_사실은_남긴다(client, db_session, monkeypatch):
+    """대화는 읽었는데 약속이 없었던 것과, 아예 안 읽은 것은 다르다."""
+    group = _seed_group(client, db_session)
+    _make_room(db_session, group.id, message_count=18, created_by=group.created_by)
+    _stub_extractor(monkeypatch, [])
+
+    commitment_service.maybe_sweep(db_session, group.id)
+
+    db_session.refresh(group)
+    assert group.last_sweep_scanned == 18
+    assert group.last_sweep_found == 0

@@ -52,6 +52,13 @@ class Group(Base):
     last_swept_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # 직전 스윕이 "무엇을 얼마나 했는지". last_swept_at은 언제 돌았는지만 알려주고
+    # 성과는 어디에도 안 남아서, 화면에 "대화 34개에서 2건 찾음"을 띄울 수 없었다.
+    #
+    # 훑을 게 없었던 스윕은 이 값을 건드리지 않는다. 0으로 덮으면 "방금 아무것도
+    # 못 찾음"과 "10분간 새 대화가 없음"이 화면에서 같아 보인다.
+    last_sweep_scanned: Mapped[int | None] = mapped_column(nullable=True)
+    last_sweep_found: Mapped[int | None] = mapped_column(nullable=True)
 
 
 class GroupMembership(Base):

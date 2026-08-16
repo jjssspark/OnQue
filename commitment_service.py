@@ -6,6 +6,7 @@
 import logging
 import os
 from datetime import date, datetime, timedelta, timezone
+from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import insert, or_, select, update
@@ -265,8 +266,17 @@ SCAN_BELOW_THRESHOLD = "below_threshold"
 SCAN_NO_BUDGET = "no_budget"
 
 
-def _scan_room(db: Session, room: ChatRoom) -> str:
-    """방 하나를 훑는다. 위 SCAN_* 중 하나를 돌려준다.
+class ScanResult(NamedTuple):
+    """방 하나를 훑은 결과. status 외에 개수를 함께 돌려주는 이유는
+    maybe_sweep이 그룹 단위 합계를 Group에 기록해야 하기 때문이다."""
+
+    status: str
+    scanned: int = 0
+    found: int = 0
+
+
+def _scan_room(db: Session, room: ChatRoom) -> ScanResult:
+    """방 하나를 훑는다. status는 위 SCAN_* 중 하나다.
 
     "안 훑었다"를 한 값으로 뭉치지 않는 이유: 기준 미달은 다음 방으로 넘어가면
     되지만 예산 소진은 남은 방을 다 건너뛰어야 한다. bool로는 구분이 안 된다.
@@ -287,10 +297,10 @@ def _scan_room(db: Session, room: ChatRoom) -> str:
     )
 
     if len(messages) < CHAT_SCAN_THRESHOLD:
-        return SCAN_BELOW_THRESHOLD
+        return ScanResult(SCAN_BELOW_THRESHOLD)
 
     if not _claim_sweep_call(db):
-        return SCAN_NO_BUDGET
+        return ScanResult(SCAN_NO_BUDGET)
 
     history = "\n".join(f"{m.sender}: {m.content}" for m in messages)
     items = gemini_service.extract_chat_commitments(history)
@@ -299,7 +309,7 @@ def _scan_room(db: Session, room: ChatRoom) -> str:
         # 않아야 다음 스윕에서 같은 배치를 다시 시도한다.
         raise RuntimeError(f"채팅 약속 추출 실패: room_id={room.id}")
 
-    create_commitments(
+    created = create_commitments(
         db,
         group_id=room.group_id,
         items=items,
@@ -308,7 +318,7 @@ def _scan_room(db: Session, room: ChatRoom) -> str:
         room_id=room.id,
     )
     room.last_scanned_message_id = messages[-1].id
-    return SCAN_DONE
+    return ScanResult(SCAN_DONE, scanned=len(messages), found=len(created))
 
 
 def maybe_sweep(db: Session, group_id: int) -> int:
@@ -357,10 +367,12 @@ def maybe_sweep(db: Session, group_id: int) -> int:
     ).scalars().all()
 
     scanned = 0
+    messages_read = 0
+    commitments_found = 0
     for room in rooms:
         try:
             result = _scan_room(db, room)
-            if result == SCAN_NO_BUDGET:
+            if result.status == SCAN_NO_BUDGET:
                 # 남은 방을 계속 돌아봐야 전부 같은 이유로 막힌다. 여기서 끊는다.
                 # 커밋은 하지 않는다 — 예산을 못 얻었으니 바꾼 것도 없다.
                 logger.info(
@@ -372,9 +384,11 @@ def maybe_sweep(db: Session, group_id: int) -> int:
                     },
                 )
                 break
-            if result == SCAN_DONE:
+            if result.status == SCAN_DONE:
                 db.commit()
                 scanned += 1
+                messages_read += result.scanned
+                commitments_found += result.found
         except Exception:
             db.rollback()
             logger.warning(
@@ -386,5 +400,16 @@ def maybe_sweep(db: Session, group_id: int) -> int:
                 },
                 exc_info=True,
             )
+
+    # 훑은 게 하나도 없으면 직전 기록을 남겨둔다. 0으로 덮으면 화면에서
+    # "방금 아무것도 못 찾음"과 "10분간 새 대화가 없음"이 구분되지 않는다.
+    if scanned > 0:
+        db.execute(
+            update(Group)
+            .where(Group.id == group_id)
+            .values(last_sweep_scanned=messages_read, last_sweep_found=commitments_found)
+            .execution_options(synchronize_session=False)
+        )
+        db.commit()
 
     return scanned
