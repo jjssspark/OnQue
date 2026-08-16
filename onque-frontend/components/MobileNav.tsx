@@ -48,26 +48,32 @@ export function MobileNav() {
         </button>
       </div>
 
-      {accountOpen && (
-        <div
-          id="mobile-account-menu"
-          className="flex gap-2 border-b border-white/10 px-4 py-2.5 [animation:fade-in_0.15s_ease-out]"
+      {/* 껍데기는 항상 렌더한다. 닫혔을 때 통째로 없애면 위 버튼의 aria-controls가
+          없는 id를 가리켜, 정작 "이 버튼이 뭘 여는가"를 알아야 할 닫힌 상태에서
+          참조가 끊긴다. SmartDashboardPanel이 같은 이유로 같은 판단을 해뒀다.
+
+          flex를 조건부로 거는 이유: display를 지정하는 클래스는 브라우저 기본
+          스타일 [hidden]{display:none}을 이긴다. flex를 그냥 두면 hidden을
+          붙여도 패널이 계속 보인다. */}
+      <div
+        id="mobile-account-menu"
+        hidden={!accountOpen}
+        className="gap-2 border-b border-white/10 px-4 py-2.5 [&:not([hidden])]:flex [animation:fade-in_0.15s_ease-out]"
+      >
+        <Link
+          href="/profile"
+          className="rounded-md bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/20"
         >
-          <Link
-            href="/profile"
-            className="rounded-md bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/20"
-          >
-            내 프로필
-          </Link>
-          <button
-            type="button"
-            onClick={logout}
-            className="rounded-md px-3 py-1.5 text-xs font-semibold text-sidebar-foreground/70 transition-colors hover:bg-white/5 hover:text-white"
-          >
-            로그아웃
-          </button>
-        </div>
-      )}
+          내 프로필
+        </Link>
+        <button
+          type="button"
+          onClick={logout}
+          className="rounded-md px-3 py-1.5 text-xs font-semibold text-sidebar-foreground/70 transition-colors hover:bg-white/5 hover:text-white"
+        >
+          로그아웃
+        </button>
+      </div>
 
       <nav className="flex gap-1 overflow-x-auto px-3 pb-2">
         {NAV_ITEMS.map((item) => (
