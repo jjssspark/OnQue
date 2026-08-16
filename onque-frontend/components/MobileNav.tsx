@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import { NavLinkHint } from '@/components/NavLinkHint';
 import { NAV_ITEMS, isNavItemActive } from '@/lib/navigation';
@@ -10,13 +10,14 @@ import { NAV_ITEMS, isNavItemActive } from '@/lib/navigation';
 export function MobileNav() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const [accountOpen, setAccountOpen] = useState(false);
-
-  // 라우트가 바뀌면 패널을 닫는다. 안 닫으면 프로필로 이동한 뒤에도
+  // 라우트가 바뀌면 패널이 닫혀야 한다. 안 닫으면 프로필로 이동한 뒤에도
   // 패널이 열린 채 남아 화면을 가린다.
-  useEffect(() => {
-    setAccountOpen(false);
-  }, [pathname]);
+  //
+  // effect로 상태를 되돌리지 않고 파생값으로 만든다. "어느 화면에서 열었는가"를
+  // 저장해 두면 라우트가 달라지는 순간 자동으로 닫힌 것이 된다 — 렌더를 한 번 더
+  // 돌리지 않고, react-hooks/set-state-in-effect에도 걸리지 않는다.
+  const [openedOn, setOpenedOn] = useState<string | null>(null);
+  const accountOpen = openedOn === pathname;
 
   return (
     <div className="md:hidden sticky top-0 z-10 bg-sidebar text-sidebar-foreground">
@@ -27,7 +28,7 @@ export function MobileNav() {
 
         <button
           type="button"
-          onClick={() => setAccountOpen((v) => !v)}
+          onClick={() => setOpenedOn(accountOpen ? null : pathname)}
           aria-expanded={accountOpen}
           aria-controls="mobile-account-menu"
           className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold text-sidebar-foreground/80 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
