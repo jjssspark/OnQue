@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ChatWindow } from '@/components/ChatWindow';
 import { useWorkspace } from '@/components/WorkspaceContext';
+import { PageShell } from '@/components/PageShell';
 import {
   createChatRoom,
   deleteChatRoom,
@@ -24,6 +25,15 @@ function formatRelative(iso: string): string {
 function initial(name: string): string {
   return name.trim().slice(0, 1) || '#';
 }
+
+const CHAT_DESCRIPTION = (
+  <>
+    주제별로 방을 나눠 팀원과 대화하세요. 방을 만들면 나만 들어와 있고, 채팅창 오른쪽 위
+    인원 버튼으로 같은 그룹 사람을 초대합니다. AI는 평소엔 끼어들지 않고,{' '}
+    <span className="font-mono text-brand">/help</span> 로 부를 때만 들어와 요약·문서 작성·할
+    일 등록을 대신합니다.
+  </>
+);
 
 export default function ChatPage() {
   const { currentGroupId } = useWorkspace();
@@ -106,30 +116,28 @@ export default function ChatPage() {
 
   if (currentGroupId === null) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-10 text-sm text-foreground/60">
-        아직 소속된 그룹이 없습니다. 관리자가 그룹에 초대하면 이용할 수 있습니다.
-      </div>
+      <PageShell eyebrow="Team Chat" title="팀 채팅" description={CHAT_DESCRIPTION}>
+        <p className="text-sm text-foreground/60">
+          아직 소속된 그룹이 없습니다. 관리자가 그룹에 초대하면 이용할 수 있습니다.
+        </p>
+      </PageShell>
     );
   }
 
   return (
-    <div className="relative mx-auto max-w-3xl px-6 py-10">
-      <div
-        className="pointer-events-none absolute -top-20 left-1/3 h-72 w-72 rounded-full bg-brand/10 blur-[120px]"
-        aria-hidden
-      />
-
+    <PageShell
+      eyebrow="Team Chat"
+      title="팀 채팅"
+      description={CHAT_DESCRIPTION}
+      width="narrow"
+    >
       <div className="relative">
-        <p className="font-mono text-xs uppercase tracking-widest text-brand">Team Chat</p>
-        <h1 className="mt-1 text-2xl font-bold text-foreground">팀 채팅</h1>
-        <p className="mt-2 text-sm leading-relaxed text-foreground/55">
-          주제별로 방을 나눠 팀원과 대화하세요. 방을 만들면 나만 들어와 있고, 채팅창 오른쪽 위
-          인원 버튼으로 같은 그룹 사람을 초대합니다. AI는 평소엔 끼어들지 않고,{' '}
-          <span className="font-mono text-brand">/help</span> 로 부를 때만 들어와 요약·문서 작성·할
-          일 등록을 대신합니다.
-        </p>
+        <div
+          className="pointer-events-none absolute -top-20 left-1/3 h-72 w-72 rounded-full bg-brand/10 blur-[120px]"
+          aria-hidden
+        />
 
-        <form onSubmit={handleCreate} className="mt-6 flex gap-2">
+        <form onSubmit={handleCreate} className="flex gap-2">
           <input
             type="text"
             value={newRoomName}
@@ -244,6 +252,6 @@ export default function ChatPage() {
           onLeave={handleLeave}
         />
       )}
-    </div>
+    </PageShell>
   );
 }

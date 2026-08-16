@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import { ReceivedInvitations } from '@/components/ReceivedInvitations';
+import { PageShell } from '@/components/PageShell';
 import { changeMyPassword, updateMyName } from '@/lib/api';
 
 function formatDate(iso: string): string {
@@ -62,12 +63,8 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
-      <p className="font-mono text-xs uppercase tracking-widest text-brand">Profile</p>
-      <h1 className="mt-1 text-2xl font-bold text-foreground">내 프로필</h1>
-      <p className="mt-2 text-sm text-foreground/60">계정 정보와 비밀번호를 관리합니다.</p>
-
-      <div className="mt-8 space-y-6">
+    <PageShell eyebrow="Profile" title="내 프로필" description="계정 정보와 비밀번호를 관리합니다.">
+      <div className="space-y-6">
         <section className="rounded-xl border border-border bg-surface p-5 shadow-sm">
           <h2 className="text-sm font-bold text-foreground">내 정보</h2>
 
@@ -186,6 +183,6 @@ export default function ProfilePage() {
           )}
         </section>
       </div>
-    </div>
+    </PageShell>
   );
 }

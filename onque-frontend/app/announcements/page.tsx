@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import { useWorkspace } from '@/components/WorkspaceContext';
+import { PageShell } from '@/components/PageShell';
 import { createAnnouncement, listAnnouncements, type AnnouncementRecord } from '@/lib/api';
 
 function formatDateTime(iso: string): string {
@@ -54,20 +55,25 @@ export default function AnnouncementsPage() {
 
   if (currentGroupId === null) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-10 text-sm text-foreground/60">
-        아직 소속된 그룹이 없습니다. 관리자가 그룹에 초대하면 이용할 수 있습니다.
-      </div>
+      <PageShell
+        eyebrow="Announcements"
+        title="팀 공지사항"
+        description="지금 선택된 그룹의 팀원이 함께 보는 공지입니다. 등록은 관리자만 할 수 있습니다."
+      >
+        <p className="text-sm text-foreground/60">
+          아직 소속된 그룹이 없습니다. 관리자가 그룹에 초대하면 이용할 수 있습니다.
+        </p>
+      </PageShell>
     );
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
-      <p className="font-mono text-xs uppercase tracking-widest text-brand">Announcements</p>
-      <h1 className="mt-1 text-2xl font-bold text-foreground">팀 공지사항</h1>
-      <p className="mt-2 text-sm text-foreground/60">
-        지금 선택된 그룹의 팀원이 함께 보는 공지입니다. 등록은 관리자만 할 수 있습니다.
-      </p>
-
+    <PageShell
+      eyebrow="Announcements"
+      title="팀 공지사항"
+      description="지금 선택된 그룹의 팀원이 함께 보는 공지입니다. 등록은 관리자만 할 수 있습니다."
+      width="narrow"
+    >
       {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
 
       {isAdmin && (
@@ -122,6 +128,6 @@ export default function AnnouncementsPage() {
           </article>
         ))}
       </div>
-    </div>
+    </PageShell>
   );
 }

@@ -10,6 +10,7 @@ import ClientPanel from '@/components/ClientPanel';
 import { ReceivedInvitations } from '@/components/ReceivedInvitations';
 import { PriorityStream } from '@/components/dashboard/PriorityStream';
 import { SummaryColumn } from '@/components/dashboard/SummaryColumn';
+import { PageShell } from '@/components/PageShell';
 import { buildPriorityStream } from '@/lib/priority';
 import {
   getCommitmentsPage,
@@ -191,29 +192,28 @@ export default function DashboardPage() {
 
   if (currentGroupId === null) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-10">
+      <PageShell eyebrow="Dashboard" title="업무 현황">
         <ReceivedInvitations onChanged={refreshMe} />
         <p className="text-sm text-foreground/60">
           아직 소속된 팀이 없습니다. 받은 초대를 수락하거나 팀 관리에서 팀을 만들어 보세요.
         </p>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-widest text-brand">Dashboard</p>
-          <h1 className="mt-1 text-2xl font-bold text-foreground">업무 현황</h1>
-        </div>
+    <PageShell
+      eyebrow="Dashboard"
+      title="업무 현황"
+      width="wide"
+      actions={
         <p className="text-xs text-fg-dim">
           {user?.name}
           {groupName && ` · ${groupName}`}
           {todayKey && ` · ${todayKey}`}
         </p>
-      </div>
-
+      }
+    >
       {(workspaceError || documentsError || commitmentsError) && (
         <div
           role="alert"
@@ -270,6 +270,6 @@ export default function DashboardPage() {
         </div>
         <ClientPanel groupId={currentGroupId} />
       </div>
-    </div>
+    </PageShell>
   );
 }
