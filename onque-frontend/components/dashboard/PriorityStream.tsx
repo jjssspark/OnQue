@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Surface } from '@/components/ui/Surface';
 import { Button, buttonClasses } from '@/components/ui/Button';
 import { StatusChip } from '@/components/ui/StatusChip';
+import { SkeletonList } from '@/components/ui/Skeleton';
 import type { PriorityItem } from '@/lib/priority';
 
 type Props = {
@@ -20,12 +21,16 @@ function dueText(item: PriorityItem): string {
 }
 
 export function PriorityStream({ items, isLoading = false, onCompleteTodo }: Props) {
+  // 로딩과 "할 일 없음"은 다른 상태다. 예전에는 같은 카드 안에서 문구만
+  // 바꿔, 데이터가 도착하면 카드가 통째로 목록으로 바뀌며 화면이 튀었다.
+  if (isLoading && items.length === 0) {
+    return <SkeletonList rows={3} rowClassName="h-24" label="우선순위 항목 불러오는 중" />;
+  }
+
   if (items.length === 0) {
     return (
       <Surface level="sunken" className="p-10 text-center">
-        <p className="text-sm text-fg-dim">
-          {isLoading ? '불러오는 중...' : '지금 처리할 것이 없습니다.'}
-        </p>
+        <p className="text-sm text-fg-dim">지금 처리할 것이 없습니다.</p>
       </Surface>
     );
   }

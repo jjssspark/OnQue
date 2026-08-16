@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { AssistantPanel } from '@/components/AssistantPanel';
+import { SkeletonList } from '@/components/ui/Skeleton';
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
@@ -136,7 +137,7 @@ export function SmartDashboardPanel() {
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-xs font-bold text-foreground/70">할 일 {openTodos.length}</h3>
         </div>
-        {loading && <p className="text-xs text-foreground/40">불러오는 중...</p>}
+        {loading && <SkeletonList rows={3} rowClassName="h-10" label="할 일 불러오는 중" />}
         {!loading && openTodos.length === 0 && (
           <p className="text-xs text-foreground/40">진행 중인 할 일이 없습니다.</p>
         )}
