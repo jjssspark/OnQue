@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+import { SkeletonList } from '@/components/ui/Skeleton';
 import {
   bulkUpdateCommitments,
   getCommitments,
@@ -140,7 +141,7 @@ export default function CommitmentPanel({ groupId, onChanged }: Props) {
       )}
 
       {isLoading ? (
-        <p className="mt-4 text-xs text-foreground/40">불러오는 중...</p>
+        <SkeletonList rows={2} rowClassName="h-20" className="mt-4" label="확인할 약속 불러오는 중" />
       ) : proposed.length === 0 ? (
         // 조회 실패 중엔 이 메시지를 띄우지 않는다 — "없음"과 "실패해서 못 봄"은
         // 승인 게이트에서 전혀 다른 의미라 혼동하면 확인 누락으로 이어진다.

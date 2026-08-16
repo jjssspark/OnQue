@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+import { SkeletonList } from '@/components/ui/Skeleton';
 import { createClient, getClients, type Client } from '@/lib/api';
 
 export default function ClientPanel({ groupId }: { groupId: number }) {
@@ -83,7 +84,7 @@ export default function ClientPanel({ groupId }: { groupId: number }) {
       )}
 
       {isLoading ? (
-        <p className="mt-4 text-xs text-foreground/40">불러오는 중...</p>
+        <SkeletonList rows={3} rowClassName="h-8" className="mt-3" label="클라이언트 불러오는 중" />
       ) : clients.length === 0 ? (
         <p className="mt-4 rounded-xl border border-dashed border-border p-4 text-center text-xs text-foreground/40">
           등록된 클라이언트가 없습니다.

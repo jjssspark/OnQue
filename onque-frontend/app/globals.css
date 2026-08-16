@@ -191,6 +191,37 @@ body {
   }
 }
 
+/* .card-actions와 같은 문제를 opacity만으로 푸는 판. 카드 액션은 max-height로
+   자리까지 접지만, 이쪽(목록 행의 삭제 버튼)은 자리를 이미 차지하고 있어
+   보이기만 토글하면 된다.
+
+   세 갈래를 모두 처리해야 한다. hover만 쓰면 터치와 키보드에서 아예 못 쓴다 —
+   실제로 이 규칙을 만들기 전까지 우측 패널의 삭제 버튼 두 개가 그랬다. */
+.hover-reveal {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.group:hover .hover-reveal,
+.group:focus-within .hover-reveal {
+  opacity: 1;
+}
+
+/* 터치 기기에는 hover가 없다. 항상 보여 둔다. */
+@media (pointer: coarse) {
+  .hover-reveal {
+    opacity: 1;
+  }
+}
+
+/* 이 파일 위쪽 전역 규칙이 모션 최소화 시 transition을 0.01ms로 죽인다.
+   전환에만 맡기면 깜빡이며 나타나거나 안 나타난다. 처음부터 보여 둔다. */
+@media (prefers-reduced-motion: reduce) {
+  .hover-reveal {
+    opacity: 1;
+  }
+}
+
 /* 기한 지난 항목의 점. 색만으로 알리지 않고 옆에 "N일 지남" 글자가 함께 있다.
    box-shadow는 transform/opacity/background-color 허용 목록 밖이지만 의도적으로
    남긴다. box-shadow는 페인트만 유발하고 리플로우(레이아웃)는 일으키지 않는다 —
@@ -206,4 +237,27 @@ body {
   60% {
     box-shadow: 0 0 0 7px rgba(255, 107, 94, 0);
   }
+}
+
+/* 페이지 진입. 라우트 전환이 즉시라 오히려 바뀐 것을 인지하기 어렵다.
+   summary-in과 같은 성격(opacity + translateY)으로 맞춘다. */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 링크 pending 힌트. 100ms 지연 후에야 나타나므로 빠른 전환에서는 보이지
+   않는다 — 깜빡임이 전환보다 더 거슬리는 것을 막는다. */
+.link-hint {
+  opacity: 0;
+}
+
+.link-hint.is-pending {
+  animation: fade-in 0.2s ease-out 0.1s forwards;
 }

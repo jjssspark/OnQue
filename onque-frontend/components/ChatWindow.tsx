@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { RoomMembers } from '@/components/RoomMembers';
+import { SkeletonList } from '@/components/ui/Skeleton';
 import {
   getChatMessages,
   sendChatMessage,
@@ -205,7 +206,7 @@ export function ChatWindow({
         )}
 
         <div className="relative flex-1 space-y-3 overflow-y-auto px-5 py-5">
-          {loading && <p className="text-sm text-foreground/40">불러오는 중...</p>}
+          {loading && <SkeletonList rows={4} rowClassName="h-12" label="메시지 불러오는 중" />}
 
           {!loading && messages.length === 0 && (
             <div className="rounded-xl border border-dashed border-border px-5 py-8 text-center">

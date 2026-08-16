@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { AssistantPanel } from '@/components/AssistantPanel';
+import { SkeletonList } from '@/components/ui/Skeleton';
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
@@ -136,7 +137,12 @@ export function SmartDashboardPanel() {
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-xs font-bold text-foreground/70">할 일 {openTodos.length}</h3>
         </div>
-        {loading && <p className="text-xs text-foreground/40">불러오는 중...</p>}
+        {/* h-9(36px)는 브라우저에서 실측한 값이다. 아래 <li>는 기한이 붙으면 35px,
+            없으면 20px인데 할 일 대부분이 추출된 약속에서 와서 기한을 갖는다.
+            3행이면 gap 포함 124px로 실측 120px에 거의 맞는다.
+            계산으로 두 번 틀렸던 자리다 — 기한 없는 행만 보고 h-5로 낮췄더니 44px
+            모자랐고, 그 전 h-10은 16px 넘쳤다. 결국 화면에서 재서 정했다. */}
+        {loading && <SkeletonList rows={3} rowClassName="h-9" label="할 일 불러오는 중" />}
         {!loading && openTodos.length === 0 && (
           <p className="text-xs text-foreground/40">진행 중인 할 일이 없습니다.</p>
         )}
@@ -156,7 +162,7 @@ export function SmartDashboardPanel() {
               </div>
               <button
                 onClick={() => removeTodo(todo.id)}
-                className="shrink-0 text-[10px] text-foreground/30 opacity-0 hover:text-red-500 group-hover:opacity-100"
+                className="hover-reveal shrink-0 text-[10px] text-foreground/30 hover:text-red-500"
               >
                 삭제
               </button>
@@ -184,7 +190,7 @@ export function SmartDashboardPanel() {
               </div>
               <button
                 onClick={() => removeSchedule(schedule.id)}
-                className="shrink-0 text-[10px] text-foreground/30 opacity-0 hover:text-red-500 group-hover:opacity-100"
+                className="hover-reveal shrink-0 text-[10px] text-foreground/30 hover:text-red-500"
               >
                 삭제
               </button>

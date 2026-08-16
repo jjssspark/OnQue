@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import { ReceivedInvitations } from '@/components/ReceivedInvitations';
+import { PageShell } from '@/components/PageShell';
 import {
   cancelGroupInvitation,
   createGroup,
@@ -122,13 +123,12 @@ export default function GroupsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
+    <PageShell
+      eyebrow="Groups"
+      title="그룹 관리"
+      description="부서·팀 단위로 그룹을 나누면 채팅·할 일·일정·문서가 그룹별로 분리됩니다."
+    >
       <ReceivedInvitations onChanged={refreshMe} />
-      <p className="font-mono text-xs uppercase tracking-widest text-brand">Groups</p>
-      <h1 className="mt-1 text-2xl font-bold text-foreground">그룹 관리</h1>
-      <p className="mt-2 text-sm text-foreground/60">
-        부서·팀 단위로 그룹을 나누면 채팅·할 일·일정·문서가 그룹별로 분리됩니다.
-      </p>
 
       {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
       {notice && (
@@ -283,6 +283,6 @@ export default function GroupsPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

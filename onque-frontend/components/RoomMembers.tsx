@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
+import { SkeletonList } from '@/components/ui/Skeleton';
 import {
   inviteRoomMember,
   listGroupMembers,
@@ -88,7 +89,11 @@ export function RoomMembers({ room, onCountChange, onLeft }: RoomMembersProps) {
   };
 
   if (loading) {
-    return <p className="px-5 py-4 text-xs text-foreground/40">멤버를 불러오는 중...</p>;
+    return (
+      <div className="border-b border-border bg-background/60 px-5 py-4">
+        <SkeletonList rows={3} rowClassName="h-8" label="멤버 불러오는 중" />
+      </div>
+    );
   }
 
   return (
