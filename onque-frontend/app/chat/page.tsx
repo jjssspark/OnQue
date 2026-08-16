@@ -116,7 +116,12 @@ export default function ChatPage() {
 
   if (currentGroupId === null) {
     return (
-      <PageShell eyebrow="Team Chat" title="팀 채팅" description={CHAT_DESCRIPTION}>
+      <PageShell
+        eyebrow="Team Chat"
+        title="팀 채팅"
+        description={CHAT_DESCRIPTION}
+        width="narrow"
+      >
         <p className="text-sm text-foreground/60">
           아직 소속된 그룹이 없습니다. 관리자가 그룹에 초대하면 이용할 수 있습니다.
         </p>

@@ -59,6 +59,7 @@ export default function AnnouncementsPage() {
         eyebrow="Announcements"
         title="팀 공지사항"
         description="지금 선택된 그룹의 팀원이 함께 보는 공지입니다. 등록은 관리자만 할 수 있습니다."
+        width="narrow"
       >
         <p className="text-sm text-foreground/60">
           아직 소속된 그룹이 없습니다. 관리자가 그룹에 초대하면 이용할 수 있습니다.

@@ -192,7 +192,7 @@ export default function DashboardPage() {
 
   if (currentGroupId === null) {
     return (
-      <PageShell eyebrow="Dashboard" title="업무 현황">
+      <PageShell eyebrow="Dashboard" title="업무 현황" width="wide">
         <ReceivedInvitations onChanged={refreshMe} />
         <p className="text-sm text-foreground/60">
           아직 소속된 팀이 없습니다. 받은 초대를 수락하거나 팀 관리에서 팀을 만들어 보세요.
