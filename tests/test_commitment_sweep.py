@@ -383,3 +383,97 @@ def test_list_endpoint_survives_sweep_failure_with_existing_data_intact(
 
     assert res.status_code == 200
     assert [c["content"] for c in res.json()["data"]] == ["기존 약속"]
+
+
+# ── 일일 예산 가드 ────────────────────────────────────────────
+#
+# 스윕은 사용자가 시키지 않았는데 도는 백그라운드 작업이고, Gemini 무료 티어
+# 하루 20건을 사용자가 직접 올리는 파일 요약과 나눠 쓴다. 예산이 없으면
+# 오전 채팅이 한도를 다 먹고, 오후에 회의 녹음을 올린 사람이 "한도 소진"을
+# 본다. 시킨 일이 안 시킨 일 때문에 실패하는 것이 한도 자체보다 나쁘다.
+
+
+def _set_budget(monkeypatch, limit):
+    monkeypatch.setattr(commitment_service, "SWEEP_DAILY_BUDGET", limit)
+
+
+def test_예산이_남아있으면_평소대로_스캔한다(client, db_session, monkeypatch):
+    _set_budget(monkeypatch, 8)
+    group = _seed_group(client, db_session)
+    _make_room(db_session, group.id, message_count=15, created_by=group.created_by)
+    mock = _stub_extractor(monkeypatch, _SAMPLE)
+
+    assert commitment_service.maybe_sweep(db_session, group.id) == 1
+    mock.assert_called_once()
+
+
+def test_예산을_다_쓰면_Gemini를_부르지_않는다(client, db_session, monkeypatch):
+    _set_budget(monkeypatch, 1)
+    group = _seed_group(client, db_session)
+    _make_room(db_session, group.id, message_count=15, created_by=group.created_by)
+    mock = _stub_extractor(monkeypatch, _SAMPLE)
+
+    # 1회차: 예산 1건을 쓴다
+    assert commitment_service.maybe_sweep(db_session, group.id) == 1
+    assert mock.call_count == 1
+
+    # 2회차: 쿨다운을 풀어 스윕은 돌게 하되, 예산이 없어 호출은 막혀야 한다
+    group.last_swept_at = None
+    db_session.commit()
+    _make_room(
+        db_session, group.id, message_count=15,
+        created_by=group.created_by, name="B사 방",
+    )
+
+    assert commitment_service.maybe_sweep(db_session, group.id) == 0
+    assert mock.call_count == 1, "예산이 소진됐는데 Gemini를 또 불렀다"
+
+
+def test_기준_미만인_방은_예산을_쓰지_않는다(client, db_session, monkeypatch):
+    """14개짜리 방을 훑는 시늉만 하고 예산을 깎으면, 정작 대화가 쌓인 방이
+    호출할 몫을 한산한 방들이 먼저 먹어치운다."""
+    _set_budget(monkeypatch, 1)
+    group = _seed_group(client, db_session)
+    _make_room(db_session, group.id, message_count=14, created_by=group.created_by)
+    mock = _stub_extractor(monkeypatch, _SAMPLE)
+
+    assert commitment_service.maybe_sweep(db_session, group.id) == 0
+    mock.assert_not_called()
+    assert commitment_service.sweep_calls_used_today(db_session) == 0
+
+
+def test_예산은_그룹이_아니라_전체_공유다(client, db_session, monkeypatch):
+    """Gemini 한도는 API 키 하나에 걸린다. 그룹마다 예산을 따로 주면
+    그룹 수만큼 한도를 넘긴다."""
+    _set_budget(monkeypatch, 1)
+    group_a = _seed_group(client, db_session, name="A팀")
+    _make_room(db_session, group_a.id, message_count=15, created_by=group_a.created_by)
+    group_b = Group(name="B팀", created_by=group_a.created_by)
+    db_session.add(group_b)
+    db_session.commit()
+    db_session.refresh(group_b)
+    _make_room(
+        db_session, group_b.id, message_count=15,
+        created_by=group_a.created_by, name="B사 방",
+    )
+    mock = _stub_extractor(monkeypatch, _SAMPLE)
+
+    assert commitment_service.maybe_sweep(db_session, group_a.id) == 1
+    assert commitment_service.maybe_sweep(db_session, group_b.id) == 0
+    assert mock.call_count == 1
+
+
+def test_추출_실패해도_예산은_소비된_채로_남는다(client, db_session, monkeypatch):
+    """실패해도 Gemini 호출은 이미 나갔다. 예산을 되돌리면 실패하는 방이
+    남은 예산을 전부 태우며 재시도를 반복한다."""
+    _set_budget(monkeypatch, 8)
+    group = _seed_group(client, db_session)
+    _make_room(db_session, group.id, message_count=15, created_by=group.created_by)
+    monkeypatch.setattr(
+        commitment_service.gemini_service,
+        "extract_chat_commitments",
+        MagicMock(return_value=None),
+    )
+
+    assert commitment_service.maybe_sweep(db_session, group.id) == 0
+    assert commitment_service.sweep_calls_used_today(db_session) == 1
