@@ -238,3 +238,26 @@ body {
     box-shadow: 0 0 0 7px rgba(255, 107, 94, 0);
   }
 }
+
+/* 페이지 진입. 라우트 전환이 즉시라 오히려 바뀐 것을 인지하기 어렵다.
+   summary-in과 같은 성격(opacity + translateY)으로 맞춘다. */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 링크 pending 힌트. 100ms 지연 후에야 나타나므로 빠른 전환에서는 보이지
+   않는다 — 깜빡임이 전환보다 더 거슬리는 것을 막는다. */
+.link-hint {
+  opacity: 0;
+}
+
+.link-hint.is-pending {
+  animation: fade-in 0.2s ease-out 0.1s forwards;
+}

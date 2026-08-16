@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
+import { NavLinkHint } from '@/components/NavLinkHint';
 import { NAV_ITEMS, isNavItemActive } from '@/lib/navigation';
 
 export function MobileNav() {
@@ -87,6 +88,7 @@ export function MobileNav() {
             }`}
           >
             {item.shortLabel}
+            <NavLinkHint />
           </Link>
         ))}
       </nav>

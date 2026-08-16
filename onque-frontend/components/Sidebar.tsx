@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { useAuth } from '@/components/AuthContext';
+import { NavLinkHint } from '@/components/NavLinkHint';
 import { NAV_ITEMS, isNavItemActive } from '@/lib/navigation';
 
 export function Sidebar() {
@@ -75,6 +76,7 @@ export function Sidebar() {
                   {item.description}
                 </span>
               </span>
+              <NavLinkHint />
               {item.href === '/dashboard' && openTodoCount > 0 && (
                 <span className="mt-0.5 shrink-0 rounded-full bg-brand px-1.5 py-0.5 text-[10px] font-bold text-brand-foreground">
                   {openTodoCount}

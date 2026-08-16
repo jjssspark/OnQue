@@ -35,7 +35,9 @@ export function PageShell({
   return (
     // 여백이 폭에 따라 줄어든다. 예전에는 모든 화면이 px-6 py-10 고정이라
     // 320px 기기에서 좌우 48px을 여백으로 썼다.
-    <div className={`mx-auto ${WIDTH[width]} px-4 py-6 sm:px-6 sm:py-10`}>
+    <div
+      className={`mx-auto ${WIDTH[width]} px-4 py-6 sm:px-6 sm:py-10 [animation:page-in_0.28s_ease-out]`}
+    >
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <p className="font-mono text-xs uppercase tracking-widest text-brand">{eyebrow}</p>
