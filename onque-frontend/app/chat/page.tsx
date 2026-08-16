@@ -238,7 +238,7 @@ export default function ChatPage() {
               <button
                 type="button"
                 onClick={() => handleDelete(room)}
-                className="mr-3 shrink-0 rounded-lg px-2 py-1 text-[11px] text-foreground/25 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-300 focus-visible:opacity-100 group-hover:opacity-100"
+                className="hover-reveal mr-3 shrink-0 rounded-lg px-2 py-1 text-[11px] text-foreground/25 transition-all hover:bg-red-500/10 hover:text-red-300"
               >
                 삭제
               </button>

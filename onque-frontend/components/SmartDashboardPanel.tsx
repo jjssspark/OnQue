@@ -156,7 +156,7 @@ export function SmartDashboardPanel() {
               </div>
               <button
                 onClick={() => removeTodo(todo.id)}
-                className="shrink-0 text-[10px] text-foreground/30 opacity-0 hover:text-red-500 group-hover:opacity-100"
+                className="hover-reveal shrink-0 text-[10px] text-foreground/30 hover:text-red-500"
               >
                 삭제
               </button>
@@ -184,7 +184,7 @@ export function SmartDashboardPanel() {
               </div>
               <button
                 onClick={() => removeSchedule(schedule.id)}
-                className="shrink-0 text-[10px] text-foreground/30 opacity-0 hover:text-red-500 group-hover:opacity-100"
+                className="hover-reveal shrink-0 text-[10px] text-foreground/30 hover:text-red-500"
               >
                 삭제
               </button>
