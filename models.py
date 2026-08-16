@@ -274,3 +274,23 @@ class Commitment(Base):
     confirmed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+class SweepBudget(Base):
+    """스윕이 하루에 쓴 Gemini 호출 수. 하루 한 행.
+
+    스윕은 사용자가 시키지 않았는데 도는 백그라운드 작업인데, Gemini 무료
+    티어의 하루 한도를 사용자가 직접 올리는 파일 요약과 나눠 쓴다. 상한이
+    없으면 오전 채팅이 한도를 다 먹고, 오후에 회의 녹음을 올린 사람이
+    "한도 소진"을 본다. 시킨 일이 안 시킨 일 때문에 실패하는 셈이다.
+
+    그룹이 아니라 전역이다 — Gemini 한도는 API 키 하나에 걸리므로 그룹마다
+    예산을 주면 그룹 수만큼 한도를 넘긴다.
+
+    날짜는 UTC 기준이다. 코드베이스가 전부 UTC로 저장·비교한다.
+    """
+
+    __tablename__ = "sweep_budget"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    calls: Mapped[int] = mapped_column(nullable=False, server_default="0")
