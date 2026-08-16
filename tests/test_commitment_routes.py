@@ -1,6 +1,6 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
-from models import Client, Commitment, Group
+from models import ChatRoom, ChatRoomMember, Client, Commitment, Group, User
 
 
 def _setup(client):
@@ -75,7 +75,7 @@ def test_list_meta_reports_total_limit_and_has_next(client, db_session):
         headers=headers,
     )
     meta = res.json()["meta"]
-    assert meta == {"total": 3, "limit": 2, "hasNext": True}
+    assert (meta["total"], meta["limit"], meta["hasNext"]) == (3, 2, True)
     assert len(res.json()["data"]) == 2
 
 
@@ -86,7 +86,62 @@ def test_list_meta_has_next_false_when_everything_fits(client, db_session):
     res = client.get(
         "/api/v1/commitments", params={"group_id": group_a}, headers=headers
     )
-    assert res.json()["meta"] == {"total": 1, "limit": 20, "hasNext": False}
+    meta = res.json()["meta"]
+    assert (meta["total"], meta["limit"], meta["hasNext"]) == (1, 20, False)
+
+
+def test_list_meta_reports_sweep_never_run(client, db_session):
+    """한 번도 안 돌았으면 last_at이 None이다. 0이 아니라 None인 이유는
+    "0개 찾음"과 "아직 안 돌아봄"이 화면에서 달리 보여야 하기 때문이다."""
+    headers, group_a, _ = _setup(client)
+    _seed(db_session, group_a)
+
+    res = client.get("/api/v1/commitments", params={"group_id": group_a}, headers=headers)
+    sweep = res.json()["meta"]["sweep"]
+    assert sweep["last_at"] is None
+    assert sweep["scanned"] is None
+    assert sweep["found"] is None
+    assert sweep["budget_total"] > 0
+
+
+def test_list_meta_reports_last_sweep_result(client, db_session):
+    headers, group_a, _ = _setup(client)
+    _seed(db_session, group_a)
+    swept_at = datetime(2026, 8, 16, 3, 0, tzinfo=timezone.utc)
+    group = db_session.get(Group, group_a)
+    group.last_scan_at = swept_at
+    group.last_sweep_scanned = 34
+    group.last_sweep_found = 2
+    db_session.commit()
+
+    res = client.get("/api/v1/commitments", params={"group_id": group_a}, headers=headers)
+    sweep = res.json()["meta"]["sweep"]
+    assert sweep["last_at"] == swept_at.isoformat()
+    assert sweep["scanned"] == 34
+    assert sweep["found"] == 2
+
+
+def test_list_exposes_room_id(client, db_session):
+    """약속 카드에서 출처 대화방으로 건너뛰려면 room_id가 필요하다.
+    가시성은 이미 room_id로 걸러진 뒤라 여기서 내려도 새지 않는다."""
+    headers, group_a, _ = _setup(client)
+    admin = db_session.query(User).filter_by(email="admin@onque.dev").one()
+    room = ChatRoom(group_id=group_a, name="영업방", created_by=admin.id)
+    db_session.add(room)
+    db_session.commit()
+    db_session.refresh(room)
+
+    # 목록을 조회하는 사람이 방 멤버여야 채팅 출처 약속이 보인다.
+    db_session.add(ChatRoomMember(room_id=room.id, user_id=admin.id))
+    db_session.commit()
+
+    _seed(db_session, group_a, source_type="chat", room_id=room.id)
+    _seed(db_session, group_a, content="전화 약속")
+
+    res = client.get("/api/v1/commitments", params={"group_id": group_a}, headers=headers)
+    by_content = {c["content"]: c["room_id"] for c in res.json()["data"]}
+    assert by_content["시안 3종 전달"] == room.id
+    assert by_content["전화 약속"] is None
 
 
 def test_list_rejects_limit_over_100(client, db_session):

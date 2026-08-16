@@ -57,6 +57,13 @@ class Group(Base):
     #
     # 훑을 게 없었던 스윕은 이 값을 건드리지 않는다. 0으로 덮으면 "방금 아무것도
     # 못 찾음"과 "10분간 새 대화가 없음"이 화면에서 같아 보인다.
+    #
+    # 시각을 따로 두는 이유: last_swept_at은 쿨다운 표식이라 훑을 게 없어도
+    # 갱신된다. 그 값과 아래 개수를 나란히 쓰면 "방금 · 대화 34개에서 2건"처럼
+    # 서로 다른 순간의 사실이 한 사건으로 읽힌다. 개수와 짝이 맞는 시각이 필요하다.
+    last_scan_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     last_sweep_scanned: Mapped[int | None] = mapped_column(nullable=True)
     last_sweep_found: Mapped[int | None] = mapped_column(nullable=True)
 

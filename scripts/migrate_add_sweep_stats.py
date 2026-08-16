@@ -25,6 +25,7 @@ import models  # noqa: E402,F401  ─ create_all이 테이블을 알려면 impor
 Base.metadata.create_all(bind=engine)
 
 NEW_COLUMNS = {
+    "last_scan_at": "TIMESTAMPTZ",
     "last_sweep_scanned": "INTEGER",
     "last_sweep_found": "INTEGER",
 }

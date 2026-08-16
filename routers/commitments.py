@@ -1,5 +1,6 @@
 import logging
 from datetime import date as date_type
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -10,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 import commitment_service
 from auth import get_current_user
 from db import get_db
-from models import Client, Commitment, GroupMembership, User
+from models import Client, Commitment, Group, GroupMembership, User
 
 router = APIRouter(prefix="/api/v1", tags=["commitments"])
 
@@ -129,10 +130,56 @@ def _serialize_commitment(c: Commitment, client_name: str | None, today: date_ty
         "status": c.status,
         "source_type": c.source_type,
         "source_id": c.source_id,
+        # 약속 카드에서 출처 대화방으로 건너뛰기 위한 값. 목록은 이미
+        # visible_commitment_filter가 room_id로 걸러낸 뒤라, 여기서 내려도
+        # 볼 수 없는 방의 id가 새지 않는다.
+        "room_id": c.room_id,
         "evidence": c.evidence,
         "is_overdue": is_overdue,
         "is_due_soon": is_due_soon,
         "created_at": c.created_at.isoformat(),
+    }
+
+
+def _utc_iso(value: datetime | None) -> str | None:
+    """tz를 반드시 붙여 내려보낸다.
+
+    프론트가 이 값으로 "12분 전"을 계산한다. tz 없는 문자열을 JS의 Date가
+    로컬시각으로 읽으면 KST 기준 9시간이 통째로 어긋난다. SQLite는 tz를
+    떨어뜨리고 Postgres는 유지해서, 환경에 따라 결과가 갈리는 자리다.
+    """
+    if value is None:
+        return None
+    aware = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return aware.astimezone(timezone.utc).isoformat()
+
+
+def _sweep_meta(db: Session, group_id: int) -> dict:
+    """방금 끝난 스윕이 무엇을 했는지. 화면에 "12분 전 · 대화 34개에서 2건 찾음"을
+    띄우기 위한 값이다.
+
+    스윕은 조용히 돌아서, 사용자 입장에서는 약속이 어느 날 그냥 생겨 있다.
+    누가 언제 무엇을 보고 만든 건지 보이지 않으면 목록을 믿기 어렵다.
+
+    아직 안 돌았으면 세 값 모두 None이다. 0으로 내리지 않는 이유는 "훑었는데
+    아무것도 못 찾음"과 구분되어야 하기 때문이다.
+
+    last_at은 쿨다운 표식(Group.last_swept_at)이 아니라 실제로 대화를 읽은
+    시각이다. 쿨다운은 훑을 게 없어도 갱신돼서, 그 값을 개수 옆에 붙이면
+    "방금 · 대화 34개에서 2건"처럼 며칠 전 성과가 방금 일처럼 읽힌다.
+    """
+    row = db.execute(
+        select(Group.last_scan_at, Group.last_sweep_scanned, Group.last_sweep_found)
+        .where(Group.id == group_id)
+    ).one()
+    return {
+        "last_at": _utc_iso(row.last_scan_at),
+        "scanned": row.last_sweep_scanned,
+        "found": row.last_sweep_found,
+        # 예산은 그룹이 아니라 서버 전체가 나눠 쓴다. 남은 양이 보여야
+        # "왜 오늘은 안 도는지"를 화면에서 설명할 수 있다.
+        "budget_used": commitment_service.sweep_calls_used_today(db),
+        "budget_total": commitment_service.SWEEP_DAILY_BUDGET,
     }
 
 
@@ -194,7 +241,12 @@ def list_commitments(
         .all()
     }
     today = commitment_service.today_kst()
-    meta = {"total": total, "limit": limit, "hasNext": total > limit}
+    meta = {
+        "total": total,
+        "limit": limit,
+        "hasNext": total > limit,
+        "sweep": _sweep_meta(db, group_id),
+    }
     return _ok(
         [_serialize_commitment(c, names.get(c.client_id), today) for c in rows], meta
     )

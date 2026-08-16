@@ -407,7 +407,13 @@ def maybe_sweep(db: Session, group_id: int) -> int:
         db.execute(
             update(Group)
             .where(Group.id == group_id)
-            .values(last_sweep_scanned=messages_read, last_sweep_found=commitments_found)
+            .values(
+                # 시각도 같이 남긴다. 위 쿨다운 선점이 갱신하는 last_swept_at은
+                # 훑을 게 없어도 올라가므로, 개수와 짝지어 보여줄 수 없다.
+                last_scan_at=datetime.now(timezone.utc),
+                last_sweep_scanned=messages_read,
+                last_sweep_found=commitments_found,
+            )
             .execution_options(synchronize_session=False)
         )
         db.commit()
