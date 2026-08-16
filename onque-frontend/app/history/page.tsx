@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { SummaryReport } from '@/components/SummaryReport';
 import { PageShell } from '@/components/PageShell';
+import { SkeletonList } from '@/components/ui/Skeleton';
 import { deleteDocument, getDocuments, type DocumentRecord } from '@/lib/api';
 
 const CATEGORY_BADGE_CLASS: Record<string, string> = {
@@ -104,7 +105,7 @@ export default function HistoryPage() {
       {errorMsg && <p className="mt-3 text-sm text-red-500">{errorMsg}</p>}
 
       <div className="mt-6 space-y-3">
-        {loading && <p className="text-sm text-foreground/40">불러오는 중...</p>}
+        {loading && <SkeletonList rows={4} rowClassName="h-16" label="이력 불러오는 중" />}
 
         {!loading && filtered.length === 0 && (
           <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-foreground/40">

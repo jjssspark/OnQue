@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ChatWindow } from '@/components/ChatWindow';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { PageShell } from '@/components/PageShell';
+import { SkeletonList } from '@/components/ui/Skeleton';
 import {
   createChatRoom,
   deleteChatRoom,
@@ -170,7 +171,7 @@ export default function ChatPage() {
         )}
 
         <div className="mt-6 space-y-2">
-          {loading && <p className="text-sm text-foreground/40">불러오는 중...</p>}
+          {loading && <SkeletonList rows={3} rowClassName="h-16" label="채팅방 불러오는 중" />}
 
           {!loading && rooms.length === 0 && (
             <div className="rounded-2xl border border-dashed border-border p-10 text-center">

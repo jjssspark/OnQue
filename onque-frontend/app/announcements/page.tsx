@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { PageShell } from '@/components/PageShell';
+import { SkeletonList } from '@/components/ui/Skeleton';
 import { createAnnouncement, listAnnouncements, type AnnouncementRecord } from '@/lib/api';
 
 function formatDateTime(iso: string): string {
@@ -107,7 +108,7 @@ export default function AnnouncementsPage() {
       )}
 
       <div className="mt-8 space-y-3">
-        {loading && <p className="text-sm text-foreground/40">불러오는 중...</p>}
+        {loading && <SkeletonList rows={3} rowClassName="h-24" label="공지 불러오는 중" />}
 
         {!loading && items.length === 0 && (
           <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-foreground/40">
