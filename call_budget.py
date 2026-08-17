@@ -10,9 +10,11 @@
 막히기 때문이다.
 """
 
+import logging
 import os
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta
 from typing import Callable
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import insert, select, update
 from sqlalchemy.exc import IntegrityError
@@ -21,9 +23,20 @@ from sqlalchemy.orm import Session
 import db as db_module
 from models import CallBudget
 
+logger = logging.getLogger(__name__)
+
 DAILY_TOTAL = int(os.getenv("AI_DAILY_TOTAL", "20"))
 # 사용자 몫으로 떼어두는 양. 스윕은 이 선 위에서만 돈다.
 RESERVE = int(os.getenv("AI_BUDGET_RESERVE", "12"))
+
+# 명세 §2의 RESET_AT을 시간대로 구현한 것 — 리셋 '시각'은 이 시간대의 자정이다.
+# 기본값이 태평양인 이유: Gemini 공식 문서가 "RPD quotas reset at midnight
+# Pacific time"이라고 못박는다. UTC 자정으로 세면 KST 09:00에 장부만 0으로
+# 돌아가고 실제 할당량은 KST 17시경까지 어제 것이라, 그 8시간 동안 화면은
+# 쓸 수 있다고 하고 Gemini는 429를 준다.
+#
+# 고정 오프셋이 아니라 시간대인 이유: 서머타임에 UTC 오프셋이 한 시간 움직인다.
+RESET_TZ = ZoneInfo(os.getenv("AI_BUDGET_RESET_TZ", "America/Los_Angeles"))
 
 _CONSUMERS = ("user", "sweep")
 
@@ -36,8 +49,13 @@ def _ceiling(consumer: str) -> int:
     return DAILY_TOTAL if consumer == "user" else DAILY_TOTAL - RESERVE
 
 
+def _now() -> datetime:
+    """리셋 기준 시간대의 현재 시각. 테스트가 시계를 고정할 수 있게 한 곳으로 모은다."""
+    return datetime.now(RESET_TZ)
+
+
 def _today() -> date:
-    return datetime.now(timezone.utc).date()
+    return _now().date()
 
 
 def used_today(db: Session) -> int:
@@ -54,12 +72,36 @@ def remaining(db: Session) -> int:
 
 
 def resets_at() -> datetime:
-    """장부가 초기화되는 시각 = 다음 UTC 자정.
+    """장부가 초기화되는 시각 = RESET_TZ의 다음 자정.
 
-    Gemini 실제 리셋 시각이 UTC 자정인지는 검증하지 않았다(설계 문서의
-    미해결 항목). 여기서 돌려주는 값은 '우리 장부'의 초기화 시각이다.
+    Gemini의 RPD 리셋과 같은 기준으로 센다. 화면이 이 값으로 "언제 풀리는지"를
+    안내하므로, 장부와 실제 할당량의 기준이 어긋나면 안내가 틀린 시각을 말한다.
     """
-    return datetime.combine(_today() + timedelta(days=1), time.min, tzinfo=timezone.utc)
+    return datetime.combine(_today() + timedelta(days=1), time.min, tzinfo=RESET_TZ)
+
+
+def _granted(db: Session, consumer: str) -> bool:
+    """선점 성공을 남기고 True를 돌려준다.
+
+    장부는 총량 하나만 세므로 소비자별 내역은 이 로그가 유일한 출처다. 20건이
+    소진됐을 때 스윕이 먹었는지 채팅이 먹었는지 답할 수 없으면, 배분 규칙을
+    조정할 근거가 없다.
+
+    소비자와 사용량을 message에도 넣는 이유: 이 저장소는 로깅 포매터를 따로
+    설정하지 않아 uvicorn 기본 핸들러가 message만 출력한다(_timed와 같은 사정).
+    extra는 나중에 구조화 로깅을 붙일 때를 위해 같이 둔다.
+    """
+    used = used_today(db)
+    logger.info(
+        "AI 예산 선점 consumer=%s used=%d/%d", consumer, used, DAILY_TOTAL,
+        extra={
+            "event": "ai_budget.claim.granted",
+            "consumer": consumer,
+            "used": used,
+            "total": DAILY_TOTAL,
+        },
+    )
+    return True
 
 
 def claim(db: Session, consumer: str) -> bool:
@@ -90,7 +132,7 @@ def claim(db: Session, consumer: str) -> bool:
     )
     if bumped.rowcount == 1:
         db.commit()
-        return True
+        return _granted(db, consumer)
 
     # 행이 있는데 못 올렸다면 상한 도달이다. 삽입을 시도하면 안 된다.
     if db.execute(
@@ -102,7 +144,7 @@ def claim(db: Session, consumer: str) -> bool:
         with db.begin_nested():
             db.execute(insert(CallBudget).values(day=today, calls=1))
         db.commit()
-        return True
+        return _granted(db, consumer)
     except IntegrityError:
         # 다른 요청이 먼저 오늘 행을 만들었다. 그 행 위에서 다시 겨룬다.
         retried = db.execute(
@@ -113,7 +155,7 @@ def claim(db: Session, consumer: str) -> bool:
         )
         if retried.rowcount == 1:
             db.commit()
-            return True
+            return _granted(db, consumer)
         return False
 
 
