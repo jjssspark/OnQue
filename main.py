@@ -975,12 +975,14 @@ def _post_bot_message(db: Session, room_id: int, text: str) -> ChatMessage:
     return message
 
 
-def _recent_history(db: Session, room_id: int, limit: int = 20) -> list[dict]:
+def _recent_history(
+    db: Session, room_id: int, limit: int = 20, exclude_id: int | None = None
+) -> list[dict]:
+    query = select(ChatMessage).where(ChatMessage.room_id == room_id)
+    if exclude_id is not None:
+        query = query.where(ChatMessage.id != exclude_id)
     recent = db.scalars(
-        select(ChatMessage)
-        .where(ChatMessage.room_id == room_id)
-        .order_by(ChatMessage.created_at.desc())
-        .limit(limit)
+        query.order_by(ChatMessage.created_at.desc()).limit(limit)
     ).all()
     return [{"sender": m.sender, "content": m.content} for m in reversed(recent)]
 
@@ -1088,7 +1090,11 @@ def create_chat_message(
         # AI가 방에 들어와 있을 때만 대화를 읽는다. 평소엔 Gemini를 호출하지 않는다.
         # 답변과 액션 추출을 한 번에 받는다 — 나눠 부르면 메시지 하나가
         # 하루 한도에서 2건을 먹는다.
-        turn = gemini_service.chat_reply_with_actions(_recent_history(db, room_id), content)
+        # 방금 저장한 메시지는 [메시지]로 따로 주므로 [지난 대화]에서 뺀다.
+        # 겹쳐 두면 같은 문장이 "새로 뽑을 것"과 "이미 등록된 것"에 동시에 걸린다.
+        turn = gemini_service.chat_reply_with_actions(
+            _recent_history(db, room_id, exclude_id=user_message.id), content
+        )
         _apply_extracted_actions(db, group_id, turn)
         db.commit()
         # 실패하면 reply가 빈 문자열이다. 빈 말풍선을 남기지 않는다.

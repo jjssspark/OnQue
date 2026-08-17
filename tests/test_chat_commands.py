@@ -275,6 +275,29 @@ def test_ai_모드_일반_메시지는_모델을_한_번만_부른다(client, mo
     assert result["bot_message"]["content"] == "네, 확인했습니다."
 
 
+def test_지난_대화에_방금_보낸_메시지는_들어가지_않는다(client, monkeypatch):
+    """[메시지]로 따로 주는 문장이 [지난 대화]에도 있으면, 같은 문장이
+    '새로 뽑을 것'과 '이미 등록된 것'에 동시에 걸린다."""
+    auth, _, room_id = _setup(client)
+    _say(client, auth, room_id, "/help")
+
+    seen = {}
+
+    def capture(recent_messages, message):
+        seen["history"] = recent_messages
+        seen["message"] = message
+        return _fake_turn()
+
+    monkeypatch.setattr(gemini_service, "chat_reply_with_actions", capture)
+
+    _say(client, auth, room_id, "내일까지 견적서 보낼게요")
+
+    assert seen["message"] == "내일까지 견적서 보낼게요"
+    assert "내일까지 견적서 보낼게요" not in [m["content"] for m in seen["history"]]
+    # 앞선 대화 자체는 남아 있어야 한다 — 겹침만 걷어내는 것이지 맥락을 버리는 게 아니다.
+    assert any(m["content"] == "/help" for m in seen["history"])
+
+
 def test_답변이_비면_봇_메시지를_남기지_않는다(client, monkeypatch, db_session):
     """모델이 죽어 reply가 비었을 때 빈 말풍선이 나가면 안 된다."""
     auth, _, room_id = _setup(client)
