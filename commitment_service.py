@@ -21,7 +21,7 @@ from models import (
     Client,
     Commitment,
     Group,
-    SweepBudget,
+    CallBudget,
     COMMITMENT_STATUSES,
 )
 
@@ -201,7 +201,7 @@ SWEEP_DAILY_BUDGET = int(os.getenv("SWEEP_DAILY_BUDGET", "8"))
 def sweep_calls_used_today(db: Session) -> int:
     """오늘 스윕이 쓴 Gemini 호출 수. 아직 없으면 0."""
     used = db.execute(
-        select(SweepBudget.calls).where(SweepBudget.day == datetime.now(timezone.utc).date())
+        select(CallBudget.calls).where(CallBudget.day == datetime.now(timezone.utc).date())
     ).scalar_one_or_none()
     return used or 0
 
@@ -224,9 +224,9 @@ def _claim_sweep_call(db: Session) -> bool:
     """
     today = datetime.now(timezone.utc).date()
     bumped = db.execute(
-        update(SweepBudget)
-        .where(SweepBudget.day == today, SweepBudget.calls < SWEEP_DAILY_BUDGET)
-        .values(calls=SweepBudget.calls + 1)
+        update(CallBudget)
+        .where(CallBudget.day == today, CallBudget.calls < SWEEP_DAILY_BUDGET)
+        .values(calls=CallBudget.calls + 1)
         .execution_options(synchronize_session=False)
     )
     if bumped.rowcount == 1:
@@ -235,7 +235,7 @@ def _claim_sweep_call(db: Session) -> bool:
 
     # 행이 있는데 못 올렸다면 예산 소진이다. 삽입을 시도하면 안 된다.
     if db.execute(
-        select(SweepBudget.day).where(SweepBudget.day == today)
+        select(CallBudget.day).where(CallBudget.day == today)
     ).scalar_one_or_none() is not None:
         return False
 
@@ -244,15 +244,15 @@ def _claim_sweep_call(db: Session) -> bool:
 
     try:
         with db.begin_nested():
-            db.execute(insert(SweepBudget).values(day=today, calls=1))
+            db.execute(insert(CallBudget).values(day=today, calls=1))
         db.commit()
         return True
     except IntegrityError:
         # 다른 요청이 먼저 오늘 행을 만들었다. 그 행 위에서 다시 겨룬다.
         retried = db.execute(
-            update(SweepBudget)
-            .where(SweepBudget.day == today, SweepBudget.calls < SWEEP_DAILY_BUDGET)
-            .values(calls=SweepBudget.calls + 1)
+            update(CallBudget)
+            .where(CallBudget.day == today, CallBudget.calls < SWEEP_DAILY_BUDGET)
+            .values(calls=CallBudget.calls + 1)
             .execution_options(synchronize_session=False)
         )
         if retried.rowcount == 1:

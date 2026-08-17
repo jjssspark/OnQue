@@ -290,21 +290,23 @@ class Commitment(Base):
     )
 
 
-class SweepBudget(Base):
-    """스윕이 하루에 쓴 Gemini 호출 수. 하루 한 행.
+class CallBudget(Base):
+    """하루에 쓴 Gemini 호출 수. 하루 한 행.
 
-    스윕은 사용자가 시키지 않았는데 도는 백그라운드 작업인데, Gemini 무료
-    티어의 하루 한도를 사용자가 직접 올리는 파일 요약과 나눠 쓴다. 상한이
-    없으면 오전 채팅이 한도를 다 먹고, 오후에 회의 녹음을 올린 사람이
-    "한도 소진"을 본다. 시킨 일이 안 시킨 일 때문에 실패하는 셈이다.
+    스윕만 세던 장부를 전체 소비로 넓혔다. 사용자가 직접 부르는 요약·비서·채팅이
+    장부에 안 잡히면, 배경 작업만 아껴봐야 한도는 그대로 소진된다.
 
     그룹이 아니라 전역이다 — Gemini 한도는 API 키 하나에 걸리므로 그룹마다
     예산을 주면 그룹 수만큼 한도를 넘긴다.
 
+    소비자별로 나눠 세지 않는다. 배분은 상한 규칙으로 하고(call_budget.claim),
+    누가 얼마나 썼는지는 구조화 로그로 남긴다. 컬럼을 늘리면 소비자가 생길
+    때마다 스키마가 바뀐다.
+
     날짜는 UTC 기준이다. 코드베이스가 전부 UTC로 저장·비교한다.
     """
 
-    __tablename__ = "sweep_budget"
+    __tablename__ = "call_budget"
 
     day: Mapped[date] = mapped_column(Date, primary_key=True)
     calls: Mapped[int] = mapped_column(nullable=False, server_default="0")
