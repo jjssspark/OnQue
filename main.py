@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+import call_budget
 import commitment_service
 import gemini_service
 from db import Base, engine, get_db
@@ -194,7 +195,9 @@ async def _summarize_and_store(
     """요약 → 저장 → (선택) 할 일 등록까지의 공통 흐름."""
 
     try:
-        structured, summary_text = await gemini_service.summarize_upload(file, prompt)
+        structured, summary_text = await gemini_service.summarize_upload(
+            file, prompt, claim=call_budget.user_claimer()
+        )
     except gemini_service.QuotaExceeded:
         # 500이 아니라 429다. 요약과 비서가 같은 무료 티어 할당량을 나눠 쓰기
         # 때문에 사용자는 요약 몇 건 만에 이 상태를 만난다. 일반 서버 오류로
@@ -215,7 +218,9 @@ async def _summarize_and_store(
         # 한 번 더 부른다. 실측 1,637ms짜리 호출이라 정상 경로에서는 뺐다.
         category=category
         or (structured or {}).get("category")
-        or gemini_service.classify_document_category(summary_text),
+        or gemini_service.classify_document_category(
+            summary_text, claim=call_budget.user_claimer()
+        ),
         filename=file.filename,
         summary=summary_text,
         summary_json=json.dumps(structured, ensure_ascii=False) if structured else None,
@@ -1003,13 +1008,15 @@ def _handle_command(
         return _post_bot_message(db, room.id, EXIT_TEXT)
 
     if command == "/요약":
-        summary = gemini_service.summarize_conversation(_recent_history(db, room.id))
+        summary = gemini_service.summarize_conversation(
+            _recent_history(db, room.id), claim=call_budget.user_claimer()
+        )
         return _post_bot_message(db, room.id, summary)
 
     if command == "/문서":
         title = argument or "채팅 회의록"
         structured = gemini_service.draft_document_from_conversation(
-            _recent_history(db, room.id), title
+            _recent_history(db, room.id), title, claim=call_budget.user_claimer()
         )
         if not structured:
             return _post_bot_message(
@@ -1024,7 +1031,9 @@ def _handle_command(
             # 업로드 경로와 같은 폴백 형태다 — 구조화 파싱이 category를 못
             # 채웠을 때만 모델을 한 번 더 부른다.
             category=structured.get("category")
-            or gemini_service.classify_document_category(summary_text),
+            or gemini_service.classify_document_category(
+                summary_text, claim=call_budget.user_claimer()
+            ),
             filename=title,
             summary=summary_text,
             summary_json=json.dumps(structured, ensure_ascii=False),
@@ -1043,7 +1052,9 @@ def _handle_command(
                 db, room.id, "등록할 내용을 함께 적어주세요. 예: /할일 견적서 8월 12일까지"
             )
         # 날짜 표현을 그대로 살리려고 추출기를 재사용한다. "8월 12일까지" -> 2026-08-12
-        actions = gemini_service.extract_chat_actions(argument)
+        actions = gemini_service.extract_chat_actions(
+            argument, claim=call_budget.user_claimer()
+        )
         created = _create_todos_from_actions(db, room.group_id, actions.get("add_todos", []))
         if not created:
             created = [Todo(group_id=room.group_id, content=argument)]
@@ -1055,7 +1066,9 @@ def _handle_command(
     if command == "/질문":
         if not argument:
             return _post_bot_message(db, room.id, "질문 내용을 함께 적어주세요. 예: /질문 A안과 B안 차이가 뭐야")
-        reply = gemini_service.generate_bot_reply(_recent_history(db, room.id), argument)
+        reply = gemini_service.generate_bot_reply(
+            _recent_history(db, room.id), argument, claim=call_budget.user_claimer()
+        )
         return _post_bot_message(db, room.id, reply)
 
     known = " ".join(CHAT_COMMANDS)
@@ -1093,7 +1106,9 @@ def create_chat_message(
         # 방금 저장한 메시지는 [메시지]로 따로 주므로 [지난 대화]에서 뺀다.
         # 겹쳐 두면 같은 문장이 "새로 뽑을 것"과 "이미 등록된 것"에 동시에 걸린다.
         turn = gemini_service.chat_reply_with_actions(
-            _recent_history(db, room_id, exclude_id=user_message.id), content
+            _recent_history(db, room_id, exclude_id=user_message.id),
+            content,
+            claim=call_budget.user_claimer(),
         )
         _apply_extracted_actions(db, group_id, turn)
         db.commit()

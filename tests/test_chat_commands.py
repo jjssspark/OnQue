@@ -54,7 +54,7 @@ def test_plain_message_does_not_call_gemini_when_ai_is_absent(client, monkeypatc
 
 def test_help_summons_ai_and_exit_dismisses_it(client, monkeypatch):
     auth, _, room_id = _setup(client)
-    monkeypatch.setattr(gemini_service, "chat_reply_with_actions", lambda h, m: _fake_turn())
+    monkeypatch.setattr(gemini_service, "chat_reply_with_actions", lambda h, m, **kw: _fake_turn())
 
     entered = _say(client, auth, room_id, "/help")
     assert entered["ai_mode"] is True
@@ -73,7 +73,7 @@ def test_help_summons_ai_and_exit_dismisses_it(client, monkeypatch):
 
 def test_summary_command_posts_bot_summary(client, monkeypatch):
     auth, _, room_id = _setup(client)
-    monkeypatch.setattr(gemini_service, "summarize_conversation", lambda msgs: "출시일을 확정했다.")
+    monkeypatch.setattr(gemini_service, "summarize_conversation", lambda msgs, **kw: "출시일을 확정했다.")
 
     result = _say(client, auth, room_id, "/요약")
 
@@ -93,9 +93,9 @@ def test_document_command_saves_a_document(client, monkeypatch, db_session):
         "notes": "",
     }
     monkeypatch.setattr(
-        gemini_service, "draft_document_from_conversation", lambda msgs, title: structured
+        gemini_service, "draft_document_from_conversation", lambda msgs, title, **kw: structured
     )
-    monkeypatch.setattr(gemini_service, "classify_document_category", lambda text: "기획")
+    monkeypatch.setattr(gemini_service, "classify_document_category", lambda text, **kw: "기획")
 
     result = _say(client, auth, room_id, "/문서 8월 첫째주 회의록")
 
@@ -109,7 +109,7 @@ def test_document_command_saves_a_document(client, monkeypatch, db_session):
 def test_document_command_reports_when_draft_fails(client, monkeypatch):
     auth, _, room_id = _setup(client)
     monkeypatch.setattr(
-        gemini_service, "draft_document_from_conversation", lambda msgs, title: None
+        gemini_service, "draft_document_from_conversation", lambda msgs, title, **kw: None
     )
 
     result = _say(client, auth, room_id, "/문서")
@@ -122,7 +122,7 @@ def test_todo_command_registers_with_parsed_due_date(client, monkeypatch):
     monkeypatch.setattr(
         gemini_service,
         "extract_chat_actions",
-        lambda c: {"add_todos": [{"content": "견적서 제출", "due_date": "2026-08-12"}]},
+        lambda c, **kw: {"add_todos": [{"content": "견적서 제출", "due_date": "2026-08-12"}]},
     )
 
     result = _say(client, auth, room_id, "/할일 견적서 8월 12일까지")
@@ -136,7 +136,7 @@ def test_todo_command_registers_with_parsed_due_date(client, monkeypatch):
 def test_todo_command_falls_back_to_raw_text(client, monkeypatch, db_session):
     auth, _, room_id = _setup(client)
     # 추출기가 아무것도 못 뽑아도 사용자가 적은 내용은 잃지 않는다.
-    monkeypatch.setattr(gemini_service, "extract_chat_actions", lambda c: {"add_todos": []})
+    monkeypatch.setattr(gemini_service, "extract_chat_actions", lambda c, **kw: {"add_todos": []})
 
     _say(client, auth, room_id, "/할일 사무실 비품 주문")
 
@@ -153,7 +153,7 @@ def test_todo_command_without_argument_asks_for_content(client):
 
 def test_ask_command_replies_without_entering_ai_mode(client, monkeypatch):
     auth, _, room_id = _setup(client)
-    monkeypatch.setattr(gemini_service, "generate_bot_reply", lambda h, m: "A안이 더 빠릅니다.")
+    monkeypatch.setattr(gemini_service, "generate_bot_reply", lambda h, m, **kw: "A안이 더 빠릅니다.")
 
     result = _say(client, auth, room_id, "/질문 A안과 B안 차이가 뭐야")
 
@@ -195,7 +195,9 @@ def test_병합_호출은_답변과_액션을_한_번에_돌려준다(monkeypatc
     monkeypatch.setattr(gemini_service.client.models, "generate_content", fake_generate)
 
     result = gemini_service.chat_reply_with_actions(
-        [{"sender": "김대리", "content": "안녕하세요"}], "내일까지 견적서 보낼게요"
+        [{"sender": "김대리", "content": "안녕하세요"}],
+        "내일까지 견적서 보낼게요",
+        claim=lambda: True,
     )
 
     assert len(calls) == 1
@@ -213,7 +215,7 @@ def test_병합_호출이_실패하면_답변도_액션도_없다(monkeypatch):
 
     monkeypatch.setattr(gemini_service.client.models, "generate_content", boom)
 
-    result = gemini_service.chat_reply_with_actions([], "아무 말")
+    result = gemini_service.chat_reply_with_actions([], "아무 말", claim=lambda: True)
 
     assert result["reply"] == ""
     assert result["add_todos"] == []
@@ -230,7 +232,7 @@ def test_병합_호출이_빈_답변을_주면_빈_문자열이다(monkeypatch):
         gemini_service.client.models, "generate_content", lambda **kw: FakeResponse()
     )
 
-    result = gemini_service.chat_reply_with_actions([], "아무 말")
+    result = gemini_service.chat_reply_with_actions([], "아무 말", claim=lambda: True)
     assert result["reply"] == ""
     assert result["add_todos"] == []
 
@@ -283,7 +285,7 @@ def test_지난_대화에_방금_보낸_메시지는_들어가지_않는다(clie
 
     seen = {}
 
-    def capture(recent_messages, message):
+    def capture(recent_messages, message, **kwargs):
         seen["history"] = recent_messages
         seen["message"] = message
         return _fake_turn()
@@ -305,7 +307,7 @@ def test_답변이_비면_봇_메시지를_남기지_않는다(client, monkeypat
     before = db_session.query(ChatMessage).filter(ChatMessage.is_bot.is_(True)).count()
 
     monkeypatch.setattr(
-        gemini_service, "chat_reply_with_actions", lambda h, m: _fake_turn(reply="")
+        gemini_service, "chat_reply_with_actions", lambda h, m, **kw: _fake_turn(reply="")
     )
 
     result = _say(client, auth, room_id, "내일까지 견적서 보낼게요")
@@ -327,7 +329,7 @@ def test_병합_호출은_한도_소진을_삼키지_않는다(monkeypatch):
     monkeypatch.setattr(gemini_service.client.models, "generate_content", boom)
 
     with pytest.raises(gemini_service.QuotaExceeded):
-        gemini_service.chat_reply_with_actions([], "아무 말")
+        gemini_service.chat_reply_with_actions([], "아무 말", claim=lambda: True)
 
 
 def test_배열이_null로_와도_빈_리스트를_지킨다(monkeypatch):
@@ -339,7 +341,7 @@ def test_배열이_null로_와도_빈_리스트를_지킨다(monkeypatch):
         lambda **kw: _turn_response(add_todos=None, complete_todo_hints=None),
     )
 
-    result = gemini_service.chat_reply_with_actions([], "아무 말")
+    result = gemini_service.chat_reply_with_actions([], "아무 말", claim=lambda: True)
 
     assert result["add_todos"] == []
     assert result["complete_todo_hints"] == []
@@ -361,10 +363,10 @@ def test_문서_명령은_초안에_분류가_있으면_모델을_다시_부르�
         "category": "기획",
     }
     monkeypatch.setattr(
-        gemini_service, "draft_document_from_conversation", lambda msgs, title: structured
+        gemini_service, "draft_document_from_conversation", lambda msgs, title, **kw: structured
     )
 
-    def must_not_be_called(text):
+    def must_not_be_called(text, **kwargs):
         raise AssertionError("초안에 분류가 있는데 classify_document_category를 불렀다")
 
     monkeypatch.setattr(gemini_service, "classify_document_category", must_not_be_called)
@@ -387,13 +389,13 @@ def test_문서_명령은_초안에_분류가_없을_때만_분류를_부른다(
         "category": "",
     }
     monkeypatch.setattr(
-        gemini_service, "draft_document_from_conversation", lambda msgs, title: structured
+        gemini_service, "draft_document_from_conversation", lambda msgs, title, **kw: structured
     )
     called = []
     monkeypatch.setattr(
         gemini_service,
         "classify_document_category",
-        lambda text: called.append(text) or "기타",
+        lambda text, **kw: called.append(text) or "기타",
     )
 
     result = _say(client, auth, room_id, "/문서 회의록")

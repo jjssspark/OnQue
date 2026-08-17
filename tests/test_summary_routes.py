@@ -34,12 +34,12 @@ def _setup_group(client):
 
 
 def _stub_gemini(monkeypatch, structured):
-    async def fake_summarize(file, prompt):
+    async def fake_summarize(file, prompt, **kwargs):
         text = gemini_service.render_summary_text(structured) if structured else "평문 요약"
         return structured, text
 
     monkeypatch.setattr(gemini_service, "summarize_upload", fake_summarize)
-    monkeypatch.setattr(gemini_service, "classify_document_category", lambda text: "기획")
+    monkeypatch.setattr(gemini_service, "classify_document_category", lambda text, **kw: "기획")
 
 
 # ── 요약 정규화/렌더 ──────────────────────────────────────────
@@ -203,7 +203,7 @@ def test_summarize_stops_on_quota_instead_of_retrying(monkeypatch):
     upload = UploadFile(file=io.BytesIO("회의록 내용".encode()), filename="meeting.txt")
 
     with pytest.raises(gemini_service.QuotaExceeded):
-        asyncio.run(gemini_service.summarize_upload(upload, "요약해라"))
+        asyncio.run(gemini_service.summarize_upload(upload, "요약해라", claim=lambda: True))
 
     assert len(calls) == 1
 
@@ -226,7 +226,7 @@ def test_summarize_still_falls_back_on_other_errors(monkeypatch):
     )
 
     upload = UploadFile(file=io.BytesIO("회의록 내용".encode()), filename="meeting.txt")
-    structured, text = asyncio.run(gemini_service.summarize_upload(upload, "요약해라"))
+    structured, text = asyncio.run(gemini_service.summarize_upload(upload, "요약해라", claim=lambda: True))
 
     assert structured is None
     assert text == "평문 요약"
@@ -238,7 +238,7 @@ def test_summarize_endpoint_returns_429_with_its_own_code(client, monkeypatch):
     그 재시도도 전부 실패한다."""
     token, group_id = _setup_group(client)
 
-    async def boom(file, prompt):
+    async def boom(file, prompt, **kwargs):
         raise gemini_service.QuotaExceeded()
 
     monkeypatch.setattr(gemini_service, "summarize_upload", boom)
@@ -327,7 +327,11 @@ def test_통화_요약_프롬프트에_오늘_날짜가_들어간다(monkeypatch
     seen = _capture_upload_prompt(monkeypatch)
     upload = UploadFile(filename="통화.wav", file=io.BytesIO(b"fake audio"))
 
-    asyncio.run(gemini_service.summarize_upload(upload, gemini_service.CALL_SUMMARY_PROMPT))
+    asyncio.run(
+        gemini_service.summarize_upload(
+            upload, gemini_service.CALL_SUMMARY_PROMPT, claim=lambda: True
+        )
+    )
 
     assert gemini_service.korean_date_context() in seen["contents"][-1]
 
@@ -337,7 +341,11 @@ def test_문서_요약_프롬프트에_오늘_날짜가_들어간다(monkeypatch
     seen = _capture_upload_prompt(monkeypatch)
     upload = UploadFile(filename="회의록.txt", file=io.BytesIO(b"fake text"))
 
-    asyncio.run(gemini_service.summarize_upload(upload, gemini_service.DOCUMENT_SUMMARY_PROMPT))
+    asyncio.run(
+        gemini_service.summarize_upload(
+            upload, gemini_service.DOCUMENT_SUMMARY_PROMPT, claim=lambda: True
+        )
+    )
 
     assert gemini_service.korean_date_context() in seen["contents"][-1]
 
@@ -347,6 +355,10 @@ def test_날짜를_붙여도_원래_지시가_남는다(monkeypatch):
     seen = _capture_upload_prompt(monkeypatch)
     upload = UploadFile(filename="통화.wav", file=io.BytesIO(b"fake audio"))
 
-    asyncio.run(gemini_service.summarize_upload(upload, gemini_service.CALL_SUMMARY_PROMPT))
+    asyncio.run(
+        gemini_service.summarize_upload(
+            upload, gemini_service.CALL_SUMMARY_PROMPT, claim=lambda: True
+        )
+    )
 
     assert gemini_service.CALL_SUMMARY_PROMPT in seen["contents"][-1]

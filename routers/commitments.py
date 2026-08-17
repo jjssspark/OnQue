@@ -176,10 +176,6 @@ def _sweep_meta(db: Session, group_id: int) -> dict:
         "last_at": _utc_iso(row.last_scan_at),
         "scanned": row.last_sweep_scanned,
         "found": row.last_sweep_found,
-        # 예산은 그룹이 아니라 서버 전체가 나눠 쓴다. 남은 양이 보여야
-        # "왜 오늘은 안 도는지"를 화면에서 설명할 수 있다.
-        "budget_used": commitment_service.sweep_calls_used_today(db),
-        "budget_total": commitment_service.SWEEP_DAILY_BUDGET,
     }
 
 

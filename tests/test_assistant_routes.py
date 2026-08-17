@@ -39,7 +39,7 @@ def test_answers_with_envelope(client, monkeypatch):
     owner, group_id = _setup(client)
     monkeypatch.setattr(
         gemini_service, "answer_assistant",
-        lambda ctx, hist, msg: {"reply": "약속은 없습니다.", "actions": []},
+        lambda ctx, hist, msg, **kw: {"reply": "약속은 없습니다.", "actions": []},
     )
 
     res = _ask(client, owner["token"], group_id)
@@ -57,7 +57,7 @@ def test_non_member_gets_403(client, monkeypatch):
     outsider = _signup(client, "outsider@onque.dev", "외부인")
     monkeypatch.setattr(
         gemini_service, "answer_assistant",
-        lambda ctx, hist, msg: {"reply": "여기 오면 안 된다", "actions": []},
+        lambda ctx, hist, msg, **kw: {"reply": "여기 오면 안 된다", "actions": []},
     )
 
     res = _ask(client, outsider["token"], group_id)
@@ -69,7 +69,7 @@ def test_non_member_gets_403(client, monkeypatch):
 def test_gemini_failure_returns_502_envelope(client, monkeypatch):
     """실패를 조용히 넘기면 '답이 없음'과 '모델이 죽음'이 구분되지 않는다."""
     owner, group_id = _setup(client)
-    monkeypatch.setattr(gemini_service, "answer_assistant", lambda ctx, hist, msg: None)
+    monkeypatch.setattr(gemini_service, "answer_assistant", lambda ctx, hist, msg, **kw: None)
 
     res = _ask(client, owner["token"], group_id)
 
@@ -83,7 +83,7 @@ def test_quota_exhaustion_returns_429_with_its_own_code(client, monkeypatch):
     반복한다."""
     owner, group_id = _setup(client)
 
-    def boom(ctx, hist, msg):
+    def boom(ctx, hist, msg, **kwargs):
         raise gemini_service.QuotaExceeded()
 
     monkeypatch.setattr(gemini_service, "answer_assistant", boom)
@@ -102,7 +102,7 @@ def test_history_is_capped_not_rejected(client, monkeypatch):
     owner, group_id = _setup(client)
     captured = {}
 
-    def fake(ctx, hist, msg):
+    def fake(ctx, hist, msg, **kwargs):
         captured["history"] = hist
         return {"reply": "네", "actions": []}
 
@@ -142,7 +142,7 @@ def test_endpoint_does_not_write_to_db(client, db_session, monkeypatch):
     todo_id = db_session.query(Todo).first().id
     monkeypatch.setattr(
         gemini_service, "answer_assistant",
-        lambda ctx, hist, msg: {
+        lambda ctx, hist, msg, **kw: {
             "reply": "지울까요?",
             "actions": [{"kind": "todo_delete", "todo_id": todo_id}],
         },
@@ -166,7 +166,7 @@ def test_dropped_actions_are_reported_in_reply(client, monkeypatch):
     owner, group_id = _setup(client)
     monkeypatch.setattr(
         gemini_service, "answer_assistant",
-        lambda ctx, hist, msg: {
+        lambda ctx, hist, msg, **kw: {
             "reply": "지우겠습니다.",
             "actions": [{"kind": "todo_delete", "todo_id": 99999}],
         },

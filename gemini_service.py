@@ -6,6 +6,7 @@ import tempfile
 import time
 from contextlib import contextmanager
 from datetime import datetime
+from typing import Callable
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
@@ -194,7 +195,9 @@ def _normalize_commitments(raw_commitments: object) -> list[dict]:
     return commitments
 
 
-def extract_chat_commitments(history_text: str) -> list[dict] | None:
+def extract_chat_commitments(
+    history_text: str, *, claim: Callable[[], bool]
+) -> list[dict] | None:
     """대화 이력에서 고객사 약속을 뽑는다.
 
     실패하면 None, 약속이 없으면 빈 리스트 — 이 둘을 구분해야 한다.
@@ -203,6 +206,8 @@ def extract_chat_commitments(history_text: str) -> list[dict] | None:
     약속은 다시는 검사되지 않는다. extract_chat_actions는 놓쳐도 사용자가
     다시 명령하면 되므로 빈 값 반환을 유지하지만, 여기는 그렇지 않다.
     """
+    _spend(claim, "commitment.extract.no_budget")
+
     prompt = (
         f"{korean_date_context()}\n\n{_CHAT_COMMITMENT_PROMPT}\n\n[대화]\n{history_text}"
     )
@@ -365,6 +370,20 @@ def _reraise_if_quota(exc: Exception, event: str) -> None:
         raise QuotaExceeded from exc
 
 
+def _spend(claim: Callable[[], bool], event: str) -> None:
+    """호출 직전에 예산 1건을 선점한다. 없으면 QuotaExceeded.
+
+    모든 Gemini 호출이 이 문을 지난다. 호출부마다 검사를 흩뿌리면 언젠가
+    한 곳이 빠지고, 빠진 곳은 조용히 예산 밖에서 돈다.
+
+    선차감이다. 이 뒤 호출이 실패해도 되돌리지 않는다 — 요청이 나갔으면
+    실제 한도는 이미 깎였고, 되돌리면 실패 재시도가 남은 예산을 태운다.
+    """
+    if not claim():
+        logger.warning("AI 일일 예산 소진", extra={"event": event})
+        raise QuotaExceeded
+
+
 _INLINE_MAX_BYTES = 10 * 1024 * 1024
 
 
@@ -388,13 +407,17 @@ def _as_content_part(content: bytes, filename: str | None, temp_path: str):
         return client.files.upload(file=temp_path)
 
 
-async def summarize_upload(file: UploadFile, prompt: str) -> tuple[dict | None, str]:
+async def summarize_upload(
+    file: UploadFile, prompt: str, *, claim: Callable[[], bool]
+) -> tuple[dict | None, str]:
     """업로드 파일을 요약해 (구조화 요약, 평문 요약)을 반환한다.
 
     구조화 응답을 파싱하지 못하면 스키마 없이 한 번 더 호출해 평문만 확보한다.
     오디오 입력에 스키마를 함께 거는 조합은 실패할 여지가 있어, 요약 자체를 잃는
     것보다 구조만 포기하는 편이 낫다.
     """
+
+    _spend(claim, "document.summarize.no_budget")
 
     # 오늘 날짜를 호출부가 아니라 여기서 붙인다. 프롬프트는 "이번 주 금요일"을
     # YYYY-MM-DD로 바꾸라고 시키는데 기준일이 없으면 모델은 학습 시점을 짚는다 —
@@ -484,8 +507,10 @@ _CATEGORY_SCHEMA = {
 }
 
 
-def classify_document_category(summary_text: str) -> str:
+def classify_document_category(summary_text: str, *, claim: Callable[[], bool]) -> str:
     """문서 요약 내용을 기획/디자인/개발/마케팅/기타 중 하나로 분류한다."""
+
+    _spend(claim, "document.classify.no_budget")
 
     try:
         # 요약과 별개로 모델을 한 번 더 부른다. 요약 결과만 보고 정하는 분류라
@@ -573,8 +598,10 @@ _EXTRACTION_SYSTEM_PROMPT = """
 """
 
 
-def extract_chat_actions(message: str) -> dict:
+def extract_chat_actions(message: str, *, claim: Callable[[], bool]) -> dict:
     """채팅 메시지에서 할 일/일정 변경사항을 구조화된 JSON으로 추출한다."""
+
+    _spend(claim, "chat.extract.no_budget")
 
     prompt = f"{korean_date_context()}\n\n{_EXTRACTION_SYSTEM_PROMPT}\n\n[메시지]\n{message}"
 
@@ -628,7 +655,9 @@ _CHAT_TURN_PROMPT = """
 """
 
 
-def chat_reply_with_actions(recent_messages: list[dict], message: str) -> dict:
+def chat_reply_with_actions(
+    recent_messages: list[dict], message: str, *, claim: Callable[[], bool]
+) -> dict:
     """채팅 한 턴에서 답변과 액션 추출을 한 번의 호출로 받는다.
 
     나누면 같은 문장을 두 번 읽히게 되고, 하루 20건짜리 한도에서 메시지 하나가
@@ -639,6 +668,8 @@ def chat_reply_with_actions(recent_messages: list[dict], message: str) -> dict:
     되돌리려면 호출부에서 extract_chat_actions + generate_bot_reply로 돌아가면
     된다. 두 함수는 /할일·/질문이 쓰고 있어 그대로 남아 있다.
     """
+    _spend(claim, "chat.turn.no_budget")
+
     prompt = (
         f"{korean_date_context()}\n\n{_CHAT_TURN_PROMPT}\n\n"
         f"[지난 대화]\n{_format_history(recent_messages) or '(없음)'}\n\n"
@@ -671,11 +702,13 @@ def _format_history(messages: list[dict]) -> str:
     return "\n".join(f"{m['sender']}: {m['content']}" for m in messages)
 
 
-def summarize_conversation(messages: list[dict]) -> str:
+def summarize_conversation(messages: list[dict], *, claim: Callable[[], bool]) -> str:
     """채팅 대화를 짧은 평문으로 요약한다. /요약 명령용."""
 
     if not messages:
         return "요약할 대화가 아직 없습니다."
+
+    _spend(claim, "chat.summary.no_budget")
 
     prompt = (
         f"{korean_date_context()}\n\n"
@@ -694,7 +727,9 @@ def summarize_conversation(messages: list[dict]) -> str:
         return "지금은 요약을 만들지 못했어요. 잠시 후 다시 시도해주세요."
 
 
-def draft_document_from_conversation(messages: list[dict], title: str) -> dict | None:
+def draft_document_from_conversation(
+    messages: list[dict], title: str, *, claim: Callable[[], bool]
+) -> dict | None:
     """채팅 대화로 회의록 초안을 만든다. 업로드 요약과 같은 구조를 돌려준다.
 
     같은 스키마를 쓰므로 이력 화면에서 업로드 요약과 동일하게 렌더된다.
@@ -702,6 +737,8 @@ def draft_document_from_conversation(messages: list[dict], title: str) -> dict |
 
     if not messages:
         return None
+
+    _spend(claim, "chat.draft.no_budget")
 
     prompt = (
         f"{korean_date_context()}\n\n{DOCUMENT_SUMMARY_PROMPT}\n\n"
@@ -733,8 +770,12 @@ _BOT_PERSONA_PROMPT = """
 """
 
 
-def generate_bot_reply(recent_messages: list[dict], new_message: str) -> str:
+def generate_bot_reply(
+    recent_messages: list[dict], new_message: str, *, claim: Callable[[], bool]
+) -> str:
     """@비서 멘션에 대한 AI PM 봇 답변을 생성한다."""
+
+    _spend(claim, "chat.reply.no_budget")
 
     history_text = "\n".join(f"{m['sender']}: {m['content']}" for m in recent_messages)
     prompt = (
@@ -826,7 +867,9 @@ _ASSISTANT_PROMPT = """
 """
 
 
-def answer_assistant(context_text: str, history: list[dict], message: str) -> dict | None:
+def answer_assistant(
+    context_text: str, history: list[dict], message: str, *, claim: Callable[[], bool]
+) -> dict | None:
     """비서 답변과 액션 제안을 받는다.
 
     실패하면 None. 빈 답으로 뭉개면 호출자가 "모델이 죽음"과 "할 말 없음"을
@@ -838,6 +881,8 @@ def answer_assistant(context_text: str, history: list[dict], message: str) -> di
     여기서 돌려주는 actions는 검증 전 원본이다 — 모델이 없는 id를 지어낼 수
     있으므로 assistant_service.validate_actions를 반드시 거쳐야 한다.
     """
+    _spend(claim, "assistant.answer.no_budget")
+
     turns = "\n".join(
         f"{'나' if t.get('role') == 'user' else '비서'}: {t.get('content', '')}" for t in history
     )

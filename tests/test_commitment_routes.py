@@ -101,7 +101,6 @@ def test_list_meta_reports_sweep_never_run(client, db_session):
     assert sweep["last_at"] is None
     assert sweep["scanned"] is None
     assert sweep["found"] is None
-    assert sweep["budget_total"] > 0
 
 
 def test_list_meta_reports_last_sweep_result(client, db_session):

@@ -4,15 +4,14 @@
 """
 
 import logging
-import os
 from datetime import date, datetime, timedelta, timezone
 from typing import NamedTuple
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import insert, or_, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
+import call_budget
 import gemini_service
 from models import (
     ChatMessage,
@@ -21,7 +20,6 @@ from models import (
     Client,
     Commitment,
     Group,
-    CallBudget,
     COMMITMENT_STATUSES,
 )
 
@@ -192,74 +190,6 @@ CHAT_SCAN_THRESHOLD = 15
 # 한도로 실패하고, 실패 시 포인터를 전진시키지 않으므로 같은 실패가 매
 # 스윕마다 반복된다. 상한을 두면 밀린 방도 스윕을 거듭하며 조금씩 따라잡는다.
 CHAT_SCAN_BATCH_LIMIT = 100
-# 스윕이 하루에 쓸 수 있는 Gemini 호출 수. 무료 티어 하루 20건 중 8건만
-# 백그라운드에 준다. 나머지 12건은 사용자가 직접 올리는 파일 요약 몫이다 —
-# 시킨 일이 안 시킨 일 때문에 실패하는 것이 한도 자체보다 나쁘다.
-SWEEP_DAILY_BUDGET = int(os.getenv("SWEEP_DAILY_BUDGET", "8"))
-
-
-def sweep_calls_used_today(db: Session) -> int:
-    """오늘 스윕이 쓴 Gemini 호출 수. 아직 없으면 0."""
-    used = db.execute(
-        select(CallBudget.calls).where(CallBudget.day == datetime.now(timezone.utc).date())
-    ).scalar_one_or_none()
-    return used or 0
-
-
-def _claim_sweep_call(db: Session) -> bool:
-    """오늘치 예산에서 호출 1건을 선점한다. 남아 있으면 True.
-
-    쿨다운 선점(maybe_sweep)과 같은 방식이다 — 조건부 UPDATE의 rowcount로
-    판정한다. SELECT 후 UPDATE 하면 두 요청이 같은 잔량을 읽고 둘 다 통과해
-    예산을 넘긴다.
-
-    오늘 행이 아직 없으면 UPDATE가 0건이라 삽입해야 하는데, 이때 다른 요청이
-    먼저 넣었으면 IntegrityError가 난다. 그대로 두면 바깥 트랜잭션(약속 목록
-    조회)까지 오염되므로 SAVEPOINT 안에서 시도하고, 졌으면 UPDATE로 재시도한다.
-
-    선점에 성공하면 곧바로 커밋한다. 이 뒤 Gemini 호출이 실패하면 maybe_sweep이
-    방 단위로 rollback 하는데, 같은 트랜잭션에 묶여 있으면 차감분까지 되돌아간다.
-    호출은 이미 나가서 실제 한도는 깎였는데 장부만 복구되는 셈이라, 실패하는 방
-    하나가 남은 예산을 전부 태우며 재시도를 반복하게 된다.
-    """
-    today = datetime.now(timezone.utc).date()
-    bumped = db.execute(
-        update(CallBudget)
-        .where(CallBudget.day == today, CallBudget.calls < SWEEP_DAILY_BUDGET)
-        .values(calls=CallBudget.calls + 1)
-        .execution_options(synchronize_session=False)
-    )
-    if bumped.rowcount == 1:
-        db.commit()
-        return True
-
-    # 행이 있는데 못 올렸다면 예산 소진이다. 삽입을 시도하면 안 된다.
-    if db.execute(
-        select(CallBudget.day).where(CallBudget.day == today)
-    ).scalar_one_or_none() is not None:
-        return False
-
-    if SWEEP_DAILY_BUDGET < 1:
-        return False
-
-    try:
-        with db.begin_nested():
-            db.execute(insert(CallBudget).values(day=today, calls=1))
-        db.commit()
-        return True
-    except IntegrityError:
-        # 다른 요청이 먼저 오늘 행을 만들었다. 그 행 위에서 다시 겨룬다.
-        retried = db.execute(
-            update(CallBudget)
-            .where(CallBudget.day == today, CallBudget.calls < SWEEP_DAILY_BUDGET)
-            .values(calls=CallBudget.calls + 1)
-            .execution_options(synchronize_session=False)
-        )
-        if retried.rowcount == 1:
-            db.commit()
-            return True
-        return False
-
 
 SCAN_DONE = "scanned"
 SCAN_BELOW_THRESHOLD = "below_threshold"
@@ -299,11 +229,13 @@ def _scan_room(db: Session, room: ChatRoom) -> ScanResult:
     if len(messages) < CHAT_SCAN_THRESHOLD:
         return ScanResult(SCAN_BELOW_THRESHOLD)
 
-    if not _claim_sweep_call(db):
-        return ScanResult(SCAN_NO_BUDGET)
-
     history = "\n".join(f"{m.sender}: {m.content}" for m in messages)
-    items = gemini_service.extract_chat_commitments(history)
+    try:
+        items = gemini_service.extract_chat_commitments(
+            history, claim=call_budget.sweep_claimer()
+        )
+    except gemini_service.QuotaExceeded:
+        return ScanResult(SCAN_NO_BUDGET)
     if items is None:
         # 모델 호출/파싱이 실패했다. "약속 없음"과 구분해 포인터를 전진시키지
         # 않아야 다음 스윕에서 같은 배치를 다시 시도한다.
@@ -380,7 +312,7 @@ def maybe_sweep(db: Session, group_id: int) -> int:
                     extra={
                         "event": "commitment.sweep.budget_exhausted",
                         "group_id": group_id,
-                        "budget": SWEEP_DAILY_BUDGET,
+                        "budget": call_budget.DAILY_TOTAL - call_budget.RESERVE,
                     },
                 )
                 break
