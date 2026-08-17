@@ -1,9 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { sendAssistantMessage, type AssistantAction, type AssistantTurn } from '@/lib/api';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { AssistantActionCard, applySafeAction } from '@/components/AssistantActionCard';
+import { BudgetNotice } from '@/components/ui/BudgetNotice';
+import { budgetExhaustedText, isBudgetExhausted, isBudgetExhaustedError } from '@/lib/ai-budget';
 
 type Message = {
   role: 'user' | 'assistant';
@@ -16,7 +18,8 @@ type Message = {
 };
 
 export function AssistantPanel() {
-  const { currentGroupId, refresh } = useWorkspace();
+  const { currentGroupId, refresh, aiBudget } = useWorkspace();
+  const budgetNoticeId = useId();
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState(false);
@@ -88,13 +91,22 @@ export function AssistantPanel() {
       // 친 문장을 입력창에 되돌려 놓는다. 날리면 다시 타이핑해야 한다.
       setDraft(text);
       setMessages((prev) => prev.slice(0, -1));
-      setError(err instanceof Error ? err.message : '비서가 응답하지 못했습니다.');
+      if (isBudgetExhaustedError(err)) {
+        // 화면의 잔량은 마지막 조회 시점의 것이라 연달아 물으면 실제보다 낙관적이다.
+        // 사전 차단이 놓친 요청은 여기서 받고, 서버 값을 다시 받아 입력구를 잠근다.
+        setError(budgetExhaustedText(aiBudget));
+        refresh();
+      } else {
+        setError(err instanceof Error ? err.message : '비서가 응답하지 못했습니다.');
+      }
     } finally {
       if (groupSeqRef.current === seq) setPending(false);
     }
-  }, [draft, pending, currentGroupId, messages, refresh]);
+  }, [draft, pending, currentGroupId, messages, refresh, aiBudget]);
 
   if (currentGroupId === null) return null;
+
+  const budgetExhausted = isBudgetExhausted(aiBudget);
 
   return (
     <section className="flex min-h-0 flex-1 flex-col border-t border-border">
@@ -160,6 +172,12 @@ export function AssistantPanel() {
       )}
 
       <div className="border-t border-border px-4 py-3">
+        {/* 잔량이 있으면 BudgetNotice가 null이라 이 칸은 비어 있다.
+            empty:hidden이 없으면 안 보이는 여백만 남는다. */}
+        <div className="mb-2 empty:hidden">
+          <BudgetNotice id={budgetNoticeId} />
+        </div>
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -172,11 +190,14 @@ export function AssistantPanel() {
             onChange={(e) => setDraft(e.target.value)}
             placeholder="무엇이든 물어보세요"
             aria-label="비서에게 물어보기"
-            className="min-w-0 flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-xs text-foreground outline-none placeholder:text-foreground/30 focus:border-accent/50"
+            disabled={budgetExhausted}
+            aria-describedby={budgetExhausted ? budgetNoticeId : undefined}
+            className="min-w-0 flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-xs text-foreground outline-none placeholder:text-foreground/30 focus:border-accent/50 disabled:opacity-40"
           />
           <button
             type="submit"
-            disabled={pending || !draft.trim()}
+            disabled={pending || !draft.trim() || budgetExhausted}
+            aria-describedby={budgetExhausted ? budgetNoticeId : undefined}
             className="shrink-0 rounded-lg border border-accent/40 px-3 py-2 text-xs font-bold text-accent transition hover:bg-accent/[0.12] disabled:opacity-30"
           >
             보내기

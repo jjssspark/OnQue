@@ -1,11 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { RoomMembers } from '@/components/RoomMembers';
 import { ChatIntroNotice } from '@/components/ChatIntroNotice';
 import { SkeletonList } from '@/components/ui/Skeleton';
+import { BudgetNotice } from '@/components/ui/BudgetNotice';
+import { budgetExhaustedText, isBudgetExhausted, isBudgetExhaustedError } from '@/lib/ai-budget';
 import {
   getChatMessages,
   sendChatMessage,
@@ -35,8 +37,9 @@ export function ChatWindow({
   onLeave,
 }: ChatWindowProps) {
   const { user } = useAuth();
-  const { applySnapshot } = useWorkspace();
+  const { applySnapshot, aiBudget, refresh } = useWorkspace();
   const senderName = user?.name ?? '나';
+  const budgetNoticeId = useId();
 
   const [messages, setMessages] = useState<ChatMessageRecord[]>([]);
   const [aiMode, setAiMode] = useState(room.ai_mode);
@@ -49,6 +52,11 @@ export function ChatWindow({
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // AI가 방에 없으면 Gemini를 부르지 않으므로 한도와 무관하다. 사람들끼리의
+  // 대화까지 막으면 예산과 상관없는 기능을 예산 때문에 잃는다.
+  const budgetBlocked = aiMode && isBudgetExhausted(aiBudget);
+  const sendDisabled = sending || !input.trim() || budgetBlocked;
 
   useEffect(() => {
     let cancelled = false;
@@ -107,7 +115,14 @@ export function ChatWindow({
       setAiMode(result.ai_mode);
       onMessageSent(room.id, result.bot_message ?? result.message, result.ai_mode);
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : '메시지 전송에 실패했습니다.');
+      if (isBudgetExhaustedError(err)) {
+        // 화면의 잔량은 마지막 조회 시점의 것이라 연달아 보내면 실제보다 낙관적이다.
+        // 사전 차단이 놓친 요청은 여기서 받고, 서버 값을 다시 받아 입력구를 잠근다.
+        setErrorMsg(budgetExhaustedText(aiBudget));
+        refresh();
+      } else {
+        setErrorMsg(err instanceof Error ? err.message : '메시지 전송에 실패했습니다.');
+      }
       // 실패한 입력을 되돌려줘야 사용자가 다시 타이핑하지 않는다.
       setInput(content);
     } finally {
@@ -262,10 +277,13 @@ export function ChatWindow({
         )}
 
         <div
-          className={`relative border-t p-3 transition-colors ${
+          className={`relative flex flex-col gap-2 border-t p-3 transition-colors ${
             aiMode ? 'border-brand/40 bg-brand/[0.04]' : 'border-border'
           }`}
         >
+          {/* AI가 없는 방은 한도와 무관하니 안내도 띄우지 않는다. */}
+          {aiMode && <BudgetNotice id={budgetNoticeId} />}
+
           <div className="flex items-end gap-2">
             <input
               ref={inputRef}
@@ -281,7 +299,8 @@ export function ChatWindow({
               placeholder={
                 aiMode ? '비서에게 말하거나 /exit 로 내보내기' : '메시지 입력 · /help 로 AI 부르기'
               }
-              disabled={sending}
+              disabled={sending || budgetBlocked}
+              aria-describedby={budgetBlocked ? budgetNoticeId : undefined}
               className={`flex-1 rounded-xl border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-foreground/30 focus:outline-none disabled:opacity-60 ${
                 aiMode ? 'border-brand/50 focus:border-brand' : 'border-border focus:border-brand'
               }`}
@@ -289,9 +308,10 @@ export function ChatWindow({
             <button
               type="button"
               onClick={handleSend}
-              disabled={sending || !input.trim()}
+              disabled={sendDisabled}
+              aria-describedby={budgetBlocked ? budgetNoticeId : undefined}
               className={`shrink-0 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
-                sending || !input.trim()
+                sendDisabled
                   ? 'cursor-not-allowed bg-foreground/10 text-foreground/30'
                   : 'bg-brand text-brand-foreground hover:-translate-y-px hover:brightness-110'
               }`}
