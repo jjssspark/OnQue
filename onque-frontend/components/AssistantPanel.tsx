@@ -45,6 +45,12 @@ export function AssistantPanel() {
   const send = useCallback(async () => {
     const text = draft.trim();
     if (!text || pending || currentGroupId === null) return;
+    if (isBudgetExhausted(aiBudget)) {
+      // 입력구를 disabled로 잠그지 않으므로 여기까지 온다. 눌렀는데 아무 일도
+      // 없으면 고장으로 읽히니, 막힌 이유를 그 자리에서 말해준다.
+      setError(budgetExhaustedText(aiBudget));
+      return;
+    }
 
     const groupId = currentGroupId;
     const seq = groupSeqRef.current;
@@ -185,20 +191,23 @@ export function AssistantPanel() {
           }}
           className="flex items-center gap-2"
         >
+          {/* 소진돼도 disabled로 잠그지 않는다. 비활성 컨트롤은 포커스를 받지 못해
+              왜 못 쓰는지 설명한 안내(aria-describedby)에 키보드·스크린리더로 닿을
+              길이 사라진다. 대신 aria-disabled로 상태를 알리고 전송만 막는다. */}
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="무엇이든 물어보세요"
             aria-label="비서에게 물어보기"
-            disabled={budgetExhausted}
             aria-describedby={budgetExhausted ? budgetNoticeId : undefined}
-            className="min-w-0 flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-xs text-foreground outline-none placeholder:text-foreground/30 focus:border-accent/50 disabled:opacity-40"
+            className="min-w-0 flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-xs text-foreground outline-none placeholder:text-foreground/30 focus:border-accent/50"
           />
           <button
             type="submit"
-            disabled={pending || !draft.trim() || budgetExhausted}
+            disabled={pending || !draft.trim()}
+            aria-disabled={budgetExhausted}
             aria-describedby={budgetExhausted ? budgetNoticeId : undefined}
-            className="shrink-0 rounded-lg border border-accent/40 px-3 py-2 text-xs font-bold text-accent transition hover:bg-accent/[0.12] disabled:opacity-30"
+            className="shrink-0 rounded-lg border border-accent/40 px-3 py-2 text-xs font-bold text-accent transition hover:bg-accent/[0.12] disabled:opacity-30 aria-disabled:opacity-30 aria-disabled:hover:bg-transparent"
           >
             보내기
           </button>

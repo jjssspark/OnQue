@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Surface } from '@/components/ui/Surface';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { buildSweepStatus } from '@/lib/sweep-status';
+import { isBudgetExhausted } from '@/lib/ai-budget';
 import type { Metric } from '@/lib/metrics';
 import type { DocumentRecord, ScheduleItem } from '@/lib/api';
 
@@ -102,7 +103,7 @@ function SweepStatusLine() {
   const status = buildSweepStatus(sweep, lastSyncedAt);
   if (status.line === null && aiBudget === null) return null;
 
-  const exhausted = aiBudget !== null && aiBudget.used >= aiBudget.total;
+  const exhausted = isBudgetExhausted(aiBudget);
 
   return (
     <div className="mt-4 border-t border-hairline pt-4">

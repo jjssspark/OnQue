@@ -53,3 +53,15 @@ export function isChatSendBlocked(
 export function isBudgetExhaustedError(err: unknown): boolean {
   return err instanceof ApiError && err.code === 'AI_DAILY_BUDGET_EXHAUSTED';
 }
+
+/** 채팅 전송이 실패한 뒤 화면을 어떻게 되돌릴 것인가.
+ *
+ * 서버는 사용자 메시지를 Gemini에 넘기기 전에 이미 확정한다. 그래서 한도 소진
+ * 거절은 "안 보내졌다"가 아니라 "저장은 됐고 비서가 답을 못 했다"이다. 이때
+ * 입력창으로 되돌리면 화면에서만 사라지고, 다시 보내면 서버에 그대로 중복된다.
+ * 남은 실패(네트워크 등)는 정말 안 보내진 것이라 입력을 되돌리는 게 맞다. */
+export type ChatSendRecovery = 'resync' | 'restore-input';
+
+export function chatSendRecovery(err: unknown): ChatSendRecovery {
+  return isBudgetExhaustedError(err) ? 'resync' : 'restore-input';
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   budgetExhaustedText,
+  chatSendRecovery,
   isBudgetExhausted,
   isBudgetExhaustedError,
   isChatSendBlocked,
@@ -105,5 +106,26 @@ describe('isBudgetExhaustedError', () => {
   it('에러가 아닌 값에도 터지지 않는다', () => {
     expect(isBudgetExhaustedError(null)).toBe(false);
     expect(isBudgetExhaustedError(undefined)).toBe(false);
+  });
+});
+
+describe('chatSendRecovery', () => {
+  it('한도 소진 거절은 서버와 목록을 다시 맞춘다 — 메시지는 이미 저장돼 있다', () => {
+    const err = new ApiError('오늘 호출을 다 썼습니다', 'AI_DAILY_BUDGET_EXHAUSTED', 429);
+    expect(chatSendRecovery(err)).toBe('resync');
+  });
+
+  it('네트워크 실패는 입력창으로 되돌린다 — 이건 정말 안 보내진 것이다', () => {
+    expect(chatSendRecovery(new TypeError('Failed to fetch'))).toBe('restore-input');
+  });
+
+  it('같은 429라도 다른 코드면 입력창으로 되돌린다', () => {
+    const err = new ApiError('요청이 너무 많습니다', 'RATE_LIMIT_EXCEEDED', 429);
+    expect(chatSendRecovery(err)).toBe('restore-input');
+  });
+
+  it('서버가 저장 전에 거절한 검증 실패도 입력창으로 되돌린다', () => {
+    const err = new ApiError('내용이 비었습니다', 'CHAT_MESSAGE_EMPTY', 400);
+    expect(chatSendRecovery(err)).toBe('restore-input');
   });
 });

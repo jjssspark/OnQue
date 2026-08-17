@@ -66,7 +66,10 @@ export function UploadPanel({
 
   const acceptedExtensions = accept.split(',').map((ext) => ext.trim().toLowerCase());
   const budgetExhausted = isBudgetExhausted(aiBudget);
-  const uploadDisabled = loading || !file || budgetExhausted;
+  // 소진·미선택은 disabled로 잠그지 않는다. 비활성 버튼은 포커스를 받지 못해
+  // 왜 못 쓰는지 설명한 안내(aria-describedby)에 키보드·스크린리더로 닿을 길이
+  // 사라진다. 상태는 aria-disabled로 알리고, 눌리면 handleUpload가 이유를 말한다.
+  const uploadBlocked = loading || !file || budgetExhausted;
 
   const selectFile = (next: File) => {
     const dot = next.name.lastIndexOf('.');
@@ -81,6 +84,10 @@ export function UploadPanel({
   };
 
   const handleUpload = async () => {
+    if (budgetExhausted) {
+      setErrorMsg(budgetExhaustedText(aiBudget));
+      return;
+    }
     if (!file) {
       setErrorMsg(emptySelectionMessage);
       return;
@@ -219,10 +226,11 @@ export function UploadPanel({
         <button
           type="button"
           onClick={handleUpload}
-          disabled={uploadDisabled}
+          disabled={loading}
+          aria-disabled={!file || budgetExhausted}
           aria-describedby={budgetExhausted ? budgetNoticeId : undefined}
           className={`mt-4 w-full rounded-xl py-3 text-sm font-semibold text-brand-foreground transition-all ${
-            uploadDisabled
+            uploadBlocked
               ? 'cursor-not-allowed bg-foreground/15'
               : 'bg-brand hover:-translate-y-px hover:brightness-110'
           }`}

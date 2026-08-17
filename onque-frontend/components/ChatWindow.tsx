@@ -9,8 +9,8 @@ import { SkeletonList } from '@/components/ui/Skeleton';
 import { BudgetNotice } from '@/components/ui/BudgetNotice';
 import {
   budgetExhaustedText,
+  chatSendRecovery,
   isBudgetExhausted,
-  isBudgetExhaustedError,
   isChatSendBlocked,
   CHAT_BUDGET_ESCAPE_HINT,
 } from '@/lib/ai-budget';
@@ -124,16 +124,26 @@ export function ChatWindow({
       setAiMode(result.ai_mode);
       onMessageSent(room.id, result.bot_message ?? result.message, result.ai_mode);
     } catch (err: unknown) {
-      if (isBudgetExhaustedError(err)) {
+      if (chatSendRecovery(err) === 'resync') {
         // 화면의 잔량은 마지막 조회 시점의 것이라 연달아 보내면 실제보다 낙관적이다.
         // 사전 차단이 놓친 요청은 여기서 받고, 서버 값을 다시 받아 입력구를 잠근다.
         setErrorMsg(budgetExhaustedText(aiBudget));
         refresh();
+        // 서버는 이 메시지를 Gemini에 넘기기 전에 이미 확정했다. 입력창으로
+        // 되돌리면 화면에서만 사라져 "실패했으니 다시"로 읽히고, 다시 보내면
+        // 서버에 그대로 중복된다. 그래서 목록을 서버와 다시 맞춘다.
+        try {
+          setMessages(await getChatMessages(room.id));
+        } catch {
+          setErrorMsg(
+            `${budgetExhaustedText(aiBudget)} 보낸 메시지는 저장됐습니다. 방을 다시 열면 보입니다.`,
+          );
+        }
       } else {
         setErrorMsg(err instanceof Error ? err.message : '메시지 전송에 실패했습니다.');
+        // 정말 안 보내진 경우다. 입력을 되돌려줘야 다시 타이핑하지 않는다.
+        setInput(content);
       }
-      // 실패한 입력을 되돌려줘야 사용자가 다시 타이핑하지 않는다.
-      setInput(content);
     } finally {
       setSending(false);
     }
