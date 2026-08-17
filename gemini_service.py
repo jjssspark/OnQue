@@ -593,6 +593,70 @@ def extract_chat_actions(message: str) -> dict:
         return dict(_EMPTY_EXTRACTION)
 
 
+# 추출 스키마에 답변 한 필드를 더한 것이다. 별도로 선언하지 않고 파생시키는
+# 이유: 추출 필드가 바뀌었을 때 한쪽만 고쳐 두 경로가 갈라지는 걸 막는다.
+_CHAT_TURN_SCHEMA = {
+    "type": "OBJECT",
+    "required": ["reply", *_EXTRACTION_SCHEMA["required"]],
+    "properties": {
+        "reply": {"type": "STRING"},
+        **_EXTRACTION_SCHEMA["properties"],
+    },
+}
+
+_CHAT_TURN_PROMPT = """
+너는 스타트업의 업무 흐름을 꿰뚫는 꼼꼼한 PM 비서 '@비서'다.
+아래 [메시지]에 대해 두 가지를 **한 번에** 해라.
+
+1. reply — 동료에게 할 답변. 2~4문장 이내로 짧고 친근하게, 한국어 존댓말로.
+   [지난 대화]의 맥락을 반영한다.
+
+2. 할 일(todo)과 일정(schedule) 변경사항 추출.
+   - 명확한 업무 지시, 약속, 마감일 언급만 추출한다. 잡담·인사·질문만 있으면 무시한다.
+   - 이미 존재할 법한 할 일/일정을 완료·취소했다는 언급이면 해당 hint 배열에
+     핵심 키워드만 짧게 넣는다.
+   - 날짜는 반드시 위에 주어진 오늘 날짜를 기준으로 YYYY-MM-DD 절대 날짜로 변환한다.
+   - 추출할 내용이 없으면 모든 배열을 빈 배열로 둔다.
+
+추출할 게 없다고 해서 reply를 비우지 마라. 두 가지는 서로 독립이다.
+"""
+
+
+def chat_reply_with_actions(recent_messages: list[dict], message: str) -> dict:
+    """채팅 한 턴에서 답변과 액션 추출을 한 번의 호출로 받는다.
+
+    나누면 같은 문장을 두 번 읽히게 되고, 하루 20건짜리 한도에서 메시지 하나가
+    2건을 먹는다. answer_assistant가 이미 같은 구조(한 응답에 답변 + 액션)로
+    돌고 있어 새 방식이 아니다.
+
+    합친 대가로 실패 격리가 없다 — 한 번의 실패가 답변과 액션을 둘 다 잃는다.
+    되돌리려면 호출부에서 extract_chat_actions + generate_bot_reply로 돌아가면
+    된다. 두 함수는 /할일·/질문이 쓰고 있어 그대로 남아 있다.
+    """
+    prompt = (
+        f"{korean_date_context()}\n\n{_CHAT_TURN_PROMPT}\n\n"
+        f"[지난 대화]\n{_format_history(recent_messages) or '(없음)'}\n\n"
+        f"[메시지]\n{message}"
+    )
+
+    empty = {**_EMPTY_EXTRACTION, "reply": ""}
+    try:
+        response = client.models.generate_content(
+            model=MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=_CHAT_TURN_SCHEMA,
+            ),
+        )
+        data = json.loads(response.text)
+        return {**empty, **data, "reply": (data.get("reply") or "").strip()}
+    except Exception as exc:
+        _reraise_if_quota(exc, "chat.turn.quota_exceeded")
+        logger.warning("채팅 턴 처리 실패", extra={"event": "chat.turn.failed"})
+        return dict(empty)
+
+
 def _format_history(messages: list[dict]) -> str:
     return "\n".join(f"{m['sender']}: {m['content']}" for m in messages)
 

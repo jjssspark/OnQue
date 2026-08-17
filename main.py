@@ -1086,11 +1086,14 @@ def create_chat_message(
         bot_message = _handle_command(db, room, command.strip(), argument.strip())
     elif room.ai_mode:
         # AI가 방에 들어와 있을 때만 대화를 읽는다. 평소엔 Gemini를 호출하지 않는다.
-        actions = gemini_service.extract_chat_actions(content)
-        _apply_extracted_actions(db, group_id, actions)
+        # 답변과 액션 추출을 한 번에 받는다 — 나눠 부르면 메시지 하나가
+        # 하루 한도에서 2건을 먹는다.
+        turn = gemini_service.chat_reply_with_actions(_recent_history(db, room_id), content)
+        _apply_extracted_actions(db, group_id, turn)
         db.commit()
-        reply_text = gemini_service.generate_bot_reply(_recent_history(db, room_id), content)
-        bot_message = _post_bot_message(db, room_id, reply_text)
+        # 실패하면 reply가 빈 문자열이다. 빈 말풍선을 남기지 않는다.
+        if turn["reply"]:
+            bot_message = _post_bot_message(db, room_id, turn["reply"])
 
     todos = db.scalars(
         select(Todo)

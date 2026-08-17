@@ -22,12 +22,24 @@ def _say(client, auth, room_id, content, sender="관리자"):
     ).json()
 
 
+def _fake_turn(reply="네, 확인했습니다.", **over):
+    empty = {
+        "add_todos": [],
+        "complete_todo_hints": [],
+        "delete_todo_hints": [],
+        "add_schedules": [],
+        "delete_schedule_hints": [],
+    }
+    return {**empty, **over, "reply": reply}
+
+
 def test_plain_message_does_not_call_gemini_when_ai_is_absent(client, monkeypatch):
     auth, _, room_id = _setup(client)
 
     def explode(*args, **kwargs):
         raise AssertionError("AI가 없는 방에서 Gemini를 호출하면 안 된다")
 
+    monkeypatch.setattr(gemini_service, "chat_reply_with_actions", explode)
     monkeypatch.setattr(gemini_service, "extract_chat_actions", explode)
     monkeypatch.setattr(gemini_service, "generate_bot_reply", explode)
 
@@ -39,8 +51,7 @@ def test_plain_message_does_not_call_gemini_when_ai_is_absent(client, monkeypatc
 
 def test_help_summons_ai_and_exit_dismisses_it(client, monkeypatch):
     auth, _, room_id = _setup(client)
-    monkeypatch.setattr(gemini_service, "extract_chat_actions", lambda c: {"add_todos": []})
-    monkeypatch.setattr(gemini_service, "generate_bot_reply", lambda h, m: "네, 확인했습니다.")
+    monkeypatch.setattr(gemini_service, "chat_reply_with_actions", lambda h, m: _fake_turn())
 
     entered = _say(client, auth, room_id, "/help")
     assert entered["ai_mode"] is True
@@ -154,6 +165,71 @@ def test_unknown_command_lists_available_ones(client):
 
     assert "모르는 명령" in result["bot_message"]["content"]
     assert "/help" in result["bot_message"]["content"]
+
+
+def test_병합_호출은_답변과_액션을_한_번에_돌려준다(monkeypatch):
+    """모델을 두 번 부르지 않고 한 응답에서 둘 다 받는다."""
+    import json
+
+    class FakeResponse:
+        text = json.dumps(
+            {
+                "reply": "네, 내일까지 견적서 확인하겠습니다.",
+                "add_todos": [{"content": "견적서 보내기", "due_date": "2026-08-18"}],
+                "complete_todo_hints": [],
+                "delete_todo_hints": [],
+                "add_schedules": [],
+                "delete_schedule_hints": [],
+            }
+        )
+
+    calls = []
+
+    def fake_generate(**kwargs):
+        calls.append(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", fake_generate)
+
+    result = gemini_service.chat_reply_with_actions(
+        [{"sender": "김대리", "content": "안녕하세요"}], "내일까지 견적서 보낼게요"
+    )
+
+    assert len(calls) == 1
+    assert result["reply"] == "네, 내일까지 견적서 확인하겠습니다."
+    assert result["add_todos"] == [{"content": "견적서 보내기", "due_date": "2026-08-18"}]
+    assert result["complete_todo_hints"] == []
+
+
+def test_병합_호출이_실패하면_답변도_액션도_없다(monkeypatch):
+    """합친 대가다. 지금은 추출이 실패해도 답변은 나갔지만, 한 번에
+    받으므로 한 번의 실패가 둘 다 잃는다. 대신 호출은 1건만 태운다."""
+
+    def boom(**kwargs):
+        raise RuntimeError("모델 실패")
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", boom)
+
+    result = gemini_service.chat_reply_with_actions([], "아무 말")
+
+    assert result["reply"] == ""
+    assert result["add_todos"] == []
+
+
+def test_병합_호출이_빈_답변을_주면_빈_문자열이다(monkeypatch):
+    """호출부가 빈 답변일 때 봇 메시지를 안 남기도록 판단할 수 있어야 한다."""
+    import json
+
+    class FakeResponse:
+        text = json.dumps({"reply": "   ", "add_todos": []})
+
+    monkeypatch.setattr(
+        gemini_service.client.models, "generate_content", lambda **kw: FakeResponse()
+    )
+
+    result = gemini_service.chat_reply_with_actions([], "아무 말")
+    assert result["reply"] == ""
+    assert result["add_todos"] == []
 
 
 def test_문서_명령은_초안에_분류가_있으면_모델을_다시_부르지_않는다(client, monkeypatch):
