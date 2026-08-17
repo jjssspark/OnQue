@@ -154,3 +154,59 @@ def test_unknown_command_lists_available_ones(client):
 
     assert "모르는 명령" in result["bot_message"]["content"]
     assert "/help" in result["bot_message"]["content"]
+
+
+def test_문서_명령은_초안에_분류가_있으면_모델을_다시_부르지_않는다(client, monkeypatch):
+    """초안 응답 스키마(_SUMMARY_SCHEMA)에 category가 이미 들어 있다.
+    한 번 더 묻는 건 하루 20건짜리 한도에서 순수 낭비다."""
+    auth, _, room_id = _setup(client)
+    _say(client, auth, room_id, "/help")
+
+    structured = {
+        "headline": "출시일 확정",
+        "key_points": ["8월 30일 출시"],
+        "requests": [],
+        "action_items": [],
+        "notes": "",
+        "commitments": [],
+        "category": "기획",
+    }
+    monkeypatch.setattr(
+        gemini_service, "draft_document_from_conversation", lambda msgs, title: structured
+    )
+
+    def must_not_be_called(text):
+        raise AssertionError("초안에 분류가 있는데 classify_document_category를 불렀다")
+
+    monkeypatch.setattr(gemini_service, "classify_document_category", must_not_be_called)
+
+    result = _say(client, auth, room_id, "/문서 회의록")
+    assert "회의록" in result["bot_message"]["content"]
+
+
+def test_문서_명령은_초안에_분류가_없을_때만_분류를_부른다(client, monkeypatch):
+    auth, _, room_id = _setup(client)
+    _say(client, auth, room_id, "/help")
+
+    structured = {
+        "headline": "출시일 확정",
+        "key_points": ["8월 30일 출시"],
+        "requests": [],
+        "action_items": [],
+        "notes": "",
+        "commitments": [],
+        "category": "",
+    }
+    monkeypatch.setattr(
+        gemini_service, "draft_document_from_conversation", lambda msgs, title: structured
+    )
+    called = []
+    monkeypatch.setattr(
+        gemini_service,
+        "classify_document_category",
+        lambda text: called.append(text) or "기타",
+    )
+
+    result = _say(client, auth, room_id, "/문서 회의록")
+    assert "회의록" in result["bot_message"]["content"]
+    assert len(called) == 1

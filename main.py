@@ -1018,7 +1018,11 @@ def _handle_command(
         doc = Document(
             group_id=room.group_id,
             source_type="document",
-            category=gemini_service.classify_document_category(summary_text),
+            # 분류는 초안 응답에 함께 온다(_SUMMARY_SCHEMA에 category가 있다).
+            # 업로드 경로와 같은 폴백 형태다 — 구조화 파싱이 category를 못
+            # 채웠을 때만 모델을 한 번 더 부른다.
+            category=structured.get("category")
+            or gemini_service.classify_document_category(summary_text),
             filename=title,
             summary=summary_text,
             summary_json=json.dumps(structured, ensure_ascii=False),
