@@ -465,6 +465,13 @@ async def summarize_upload(
         # 1차를 인라인으로 보냈다면 그게 실패 원인일 수 있다(모델이 받지 않는
         # mime, 크기 초과 등). 재시도는 File API로 바꿔서 간다 — 인라인 판단이
         # 틀려도 요약 자체를 잃지 않게 하는 안전망이다.
+        #
+        # 2차 호출이 실제로 나가므로 선점도 한 건 더 한다. 진입부에서 2건을
+        # 미리 잡지 않는 이유는, 폴백이 안 도는 다수 경로에서 매번 1건을 버려
+        # 실효 용량이 반토막 나기 때문이다. 아래 업로드는 오직 2차 호출을
+        # 먹이려고 존재하므로(실측 2.7~3.0초) 선점을 그 앞에 둔다.
+        _spend(claim, "document.summarize.fallback_no_budget")
+
         if not isinstance(file_part, types.File):
             with _timed("document.summarize.file_upload_retry", bytes=len(content)):
                 file_part = client.files.upload(file=temp_path)

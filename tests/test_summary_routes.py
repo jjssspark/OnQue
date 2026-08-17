@@ -233,6 +233,61 @@ def test_summarize_still_falls_back_on_other_errors(monkeypatch):
     assert len(calls) == 2
 
 
+def test_폴백이_돌면_예산도_두_건_선점한다(monkeypatch):
+    """폴백은 모델 호출이 실제로 한 번 더 나가는 경로다. 진입부에서 1건만
+    선점하면 장부가 실제 소비를 못 따라가고, 폴백이 잦은 날 한도를 넘긴다."""
+    calls = []
+
+    def flaky(**kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise ValueError("구조화 파싱 실패")
+        return SimpleNamespace(text="평문 요약")
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", flaky)
+    monkeypatch.setattr(
+        gemini_service.client.files, "upload", lambda **kwargs: SimpleNamespace(name="files/x")
+    )
+
+    claimed = []
+    upload = UploadFile(file=io.BytesIO("회의록 내용".encode()), filename="meeting.txt")
+    asyncio.run(
+        gemini_service.summarize_upload(
+            upload, "요약해라", claim=lambda: claimed.append(1) or True
+        )
+    )
+
+    assert len(calls) == 2
+    assert len(claimed) == 2, "2차 호출이 나갔는데 예산은 1건만 깎였다"
+
+
+def test_폴백_직전에_예산이_없으면_업로드도_2차_호출도_없다(monkeypatch):
+    """File API 업로드는 오직 2차 호출을 먹이려고 존재한다(실측 2.7~3.0초).
+    예산이 없으면 그 왕복을 태울 이유가 없다. 첫 1건은 환불하지 않는다 —
+    그 호출은 실제로 나갔다."""
+    calls = []
+
+    def flaky(**kwargs):
+        calls.append(1)
+        raise ValueError("구조화 파싱 실패")
+
+    def no_upload(**kwargs):
+        raise AssertionError("예산이 없는데 File API 업로드를 시도했다")
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", flaky)
+    monkeypatch.setattr(gemini_service.client.files, "upload", no_upload)
+
+    budget = [True, False]
+    upload = UploadFile(file=io.BytesIO("회의록 내용".encode()), filename="meeting.txt")
+
+    with pytest.raises(gemini_service.QuotaExceeded):
+        asyncio.run(
+            gemini_service.summarize_upload(upload, "요약해라", claim=lambda: budget.pop(0))
+        )
+
+    assert len(calls) == 1
+
+
 def test_summarize_endpoint_returns_429_with_its_own_code(client, monkeypatch):
     """500으로 뭉개면 사용자는 파일이 잘못된 줄 알고 다른 파일로 재시도한다.
     그 재시도도 전부 실패한다."""
