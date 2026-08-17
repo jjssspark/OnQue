@@ -1,5 +1,8 @@
+import pytest
+from google.genai import errors as genai_errors
+
 import gemini_service
-from models import Document, Todo
+from models import ChatMessage, Document, Todo
 
 
 def _setup(client):
@@ -230,6 +233,93 @@ def test_병합_호출이_빈_답변을_주면_빈_문자열이다(monkeypatch):
     result = gemini_service.chat_reply_with_actions([], "아무 말")
     assert result["reply"] == ""
     assert result["add_todos"] == []
+
+
+def _turn_response(**over):
+    """모델이 돌려줄 법한 한 턴 응답. generate_content를 가짜로 바꿀 때 쓴다."""
+    import json
+
+    body = {
+        "reply": "네, 확인했습니다.",
+        "add_todos": [],
+        "complete_todo_hints": [],
+        "delete_todo_hints": [],
+        "add_schedules": [],
+        "delete_schedule_hints": [],
+    }
+    body.update(over)
+
+    class FakeResponse:
+        text = json.dumps(body)
+
+    return FakeResponse()
+
+
+def test_ai_모드_일반_메시지는_모델을_한_번만_부른다(client, monkeypatch):
+    """이 태스크의 존재 이유다. 함수를 직접 부르는 대신 엔드포인트를 쳐서,
+    호출부가 실제로 한 번만 태우는지 본다."""
+    auth, _, room_id = _setup(client)
+    _say(client, auth, room_id, "/help")
+
+    calls = []
+
+    def fake_generate(**kwargs):
+        calls.append(kwargs)
+        return _turn_response()
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", fake_generate)
+
+    result = _say(client, auth, room_id, "내일까지 견적서 보낼게요")
+
+    assert len(calls) == 1
+    assert result["bot_message"]["content"] == "네, 확인했습니다."
+
+
+def test_답변이_비면_봇_메시지를_남기지_않는다(client, monkeypatch, db_session):
+    """모델이 죽어 reply가 비었을 때 빈 말풍선이 나가면 안 된다."""
+    auth, _, room_id = _setup(client)
+    _say(client, auth, room_id, "/help")
+    before = db_session.query(ChatMessage).filter(ChatMessage.is_bot.is_(True)).count()
+
+    monkeypatch.setattr(
+        gemini_service, "chat_reply_with_actions", lambda h, m: _fake_turn(reply="")
+    )
+
+    result = _say(client, auth, room_id, "내일까지 견적서 보낼게요")
+
+    assert result["bot_message"] is None
+    after = db_session.query(ChatMessage).filter(ChatMessage.is_bot.is_(True)).count()
+    assert after == before
+
+
+def test_병합_호출은_한도_소진을_삼키지_않는다(monkeypatch):
+    """429는 일시적 오류와 달리 사용량이 초기화될 때까지 계속 실패한다.
+    빈 답으로 뭉개면 호출자가 둘을 구분할 수 없다."""
+
+    def boom(**kwargs):
+        raise genai_errors.ClientError(
+            429, {"error": {"code": 429, "message": "quota", "status": "RESOURCE_EXHAUSTED"}}
+        )
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", boom)
+
+    with pytest.raises(gemini_service.QuotaExceeded):
+        gemini_service.chat_reply_with_actions([], "아무 말")
+
+
+def test_배열이_null로_와도_빈_리스트를_지킨다(monkeypatch):
+    """모델이 배열 자리에 null을 주면 _apply_extracted_actions의 for가
+    TypeError로 터진다. ai_mode 메시지마다 도는 경로라 그대로 500이 된다."""
+    monkeypatch.setattr(
+        gemini_service.client.models,
+        "generate_content",
+        lambda **kw: _turn_response(add_todos=None, complete_todo_hints=None),
+    )
+
+    result = gemini_service.chat_reply_with_actions([], "아무 말")
+
+    assert result["add_todos"] == []
+    assert result["complete_todo_hints"] == []
 
 
 def test_문서_명령은_초안에_분류가_있으면_모델을_다시_부르지_않는다(client, monkeypatch):
