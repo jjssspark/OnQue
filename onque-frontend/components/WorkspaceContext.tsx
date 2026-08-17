@@ -13,6 +13,7 @@ import {
   type Todo,
   type CommitmentRecord,
   type SweepMeta,
+  type AiBudget,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 
@@ -45,6 +46,11 @@ type WorkspaceContextValue = {
    * 대시보드가 자체 조회로 받을 수도 있지만 그쪽은 그룹 전환 때만 도는지라
    * "12분 전"이 오래 멈춰 있게 된다. 30초마다 도는 이 조회에 얹는다. */
   sweep: SweepMeta | null;
+  /** 오늘 AI 호출 잔량. 응답에 없으면 null.
+   *
+   * 30초마다 도는 이 조회에 얹혀 온다. 입력구를 미리 막는 데 쓰므로
+   * 화면 여러 곳이 같은 값을 봐야 한다. */
+  aiBudget: AiBudget | null;
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -60,6 +66,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [dueSoon, setDueSoon] = useState<CommitmentRecord[]>([]);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [sweep, setSweep] = useState<SweepMeta | null>(null);
+  const [aiBudget, setAiBudget] = useState<AiBudget | null>(null);
   // 뒤늦게 도착한 이전 요청의 응답이 최신 화면을 덮지 못하게 하는 세대 번호.
   const requestSeqRef = useRef(0);
   const inFlightRef = useRef(false);
@@ -93,6 +100,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setProposedCount(0);
       setDueSoon([]);
       setSweep(null);
+      setAiBudget(null);
       setError(null);
       setLastSyncedAt(null);
       setLoading(false);
@@ -112,6 +120,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setSchedules(nextSchedules);
       setProposedCount(proposed.meta?.total ?? proposed.data.length);
       setSweep(proposed.meta?.sweep ?? null);
+      setAiBudget(proposed.meta?.ai_budget ?? null);
       setDueSoon(
         confirmed
           .filter((c) => c.is_overdue || c.is_due_soon)
@@ -202,6 +211,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         dueSoon,
         lastSyncedAt,
         sweep,
+        aiBudget,
       }}
     >
       {children}

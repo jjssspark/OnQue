@@ -195,20 +195,25 @@ export type CommitmentRecord = {
 
 /** 백그라운드 스윕이 직전에 무엇을 했는지.
  *
- * 스윕은 조용히 돌아서, 사용자 입장에서는 약속이 어느 날 그냥 생겨 있다.
- * 이 값들이 있어야 "언제, 무엇을 보고 만든 건지"를 화면에서 말해줄 수 있다.
- *
- * 아직 한 번도 대화를 훑지 않았으면 앞 세 값이 모두 null이다. 0이 아닌 이유는
+ * 아직 한 번도 대화를 훑지 않았으면 세 값이 모두 null이다. 0이 아닌 이유는
  * "훑었는데 못 찾음"과 "아직 훑은 적 없음"이 다른 상태이기 때문이다. */
 export type SweepMeta = {
   last_at: string | null;
   scanned: number | null;
   found: number | null;
-  budget_used: number;
-  budget_total: number;
 };
 
-export type CommitmentListMeta = ListMeta & { sweep: SweepMeta };
+/** 오늘 AI 호출을 얼마나 썼는지.
+ *
+ * 스윕 메타와 분리돼 있다 — 이 예산은 스윕만의 것이 아니라 요약·비서·채팅이
+ * 함께 쓴다. 남은 게 없으면 화면이 입력을 미리 막는 데 쓴다. */
+export type AiBudget = {
+  used: number;
+  total: number;
+  resets_at: string;
+};
+
+export type CommitmentListMeta = ListMeta & { sweep: SweepMeta; ai_budget: AiBudget };
 
 export type AssistantActionKind =
   | 'todo_add'
