@@ -64,8 +64,8 @@ def send_assistant_message(
         raise HTTPException(
             status_code=429,
             detail={
-                "code": "ASSISTANT_QUOTA_EXCEEDED",
-                "message": "AI 호출 한도를 모두 썼습니다. 사용량이 초기화된 뒤 다시 이용해주세요.",
+                "code": "AI_DAILY_BUDGET_EXHAUSTED",
+                "message": "오늘 AI 한도를 다 썼습니다. 내일 다시 이용해주세요.",
             },
         )
     if answer is None:

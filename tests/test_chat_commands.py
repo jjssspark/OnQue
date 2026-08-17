@@ -401,3 +401,35 @@ def test_문서_명령은_초안에_분류가_없을_때만_분류를_부른다(
     result = _say(client, auth, room_id, "/문서 회의록")
     assert "회의록" in result["bot_message"]["content"]
     assert len(called) == 1
+
+
+def _post_message(client, auth, room_id, content):
+    return client.post(
+        "/chat/messages",
+        params={"room_id": room_id},
+        json={"sender": "관리자", "content": content},
+        headers=auth,
+    )
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["이번 주 목표 정리해줘", "/요약", "/문서 회의록", "/할일 견적서 보내기", "/질문 A안이 뭐야"],
+)
+def test_예산_소진이면_채팅_경로가_429를_준다(client, monkeypatch, content):
+    """소진 뒤 이 다섯 경로가 500으로 터졌다. 사용자 메시지는 이미 커밋된
+    뒤라 "저장은 됐는데 응답만 500"이 되고, 전역 핸들러가 메시지마다 스택
+    트레이스를 찍는다."""
+    import call_budget
+
+    auth, _, room_id = _setup(client)
+    # 일반 메시지 경로를 열어두려면 AI가 방에 있어야 한다. /help는 모델을 안 부른다.
+    _say(client, auth, room_id, "/help")
+
+    monkeypatch.setattr(call_budget, "DAILY_TOTAL", 0)
+    monkeypatch.setattr(call_budget, "RESERVE", 0)
+
+    res = _post_message(client, auth, room_id, content)
+
+    assert res.status_code == 429
+    assert res.json()["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"

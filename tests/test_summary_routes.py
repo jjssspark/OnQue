@@ -306,7 +306,7 @@ def test_summarize_endpoint_returns_429_with_its_own_code(client, monkeypatch):
     )
 
     assert res.status_code == 429
-    assert res.json()["error"]["code"] == "DOCUMENT_QUOTA_EXCEEDED"
+    assert res.json()["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"
 
 
 # ── 수동 할 일 등록 ──────────────────────────────────────────

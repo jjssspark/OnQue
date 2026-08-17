@@ -205,8 +205,8 @@ async def _summarize_and_store(
         raise HTTPException(
             status_code=429,
             detail={
-                "code": "DOCUMENT_QUOTA_EXCEEDED",
-                "message": "AI 호출 한도를 모두 썼습니다. 사용량이 초기화된 뒤 다시 이용해주세요.",
+                "code": "AI_DAILY_BUDGET_EXHAUSTED",
+                "message": "오늘 AI 한도를 다 썼습니다. 내일 다시 이용해주세요.",
             },
         )
 
@@ -1096,25 +1096,37 @@ def create_chat_message(
     db.refresh(user_message)
 
     bot_message = None
-    if content.startswith("/"):
-        command, _, argument = content.partition(" ")
-        bot_message = _handle_command(db, room, command.strip(), argument.strip())
-    elif room.ai_mode:
-        # AI가 방에 들어와 있을 때만 대화를 읽는다. 평소엔 Gemini를 호출하지 않는다.
-        # 답변과 액션 추출을 한 번에 받는다 — 나눠 부르면 메시지 하나가
-        # 하루 한도에서 2건을 먹는다.
-        # 방금 저장한 메시지는 [메시지]로 따로 주므로 [지난 대화]에서 뺀다.
-        # 겹쳐 두면 같은 문장이 "새로 뽑을 것"과 "이미 등록된 것"에 동시에 걸린다.
-        turn = gemini_service.chat_reply_with_actions(
-            _recent_history(db, room_id, exclude_id=user_message.id),
-            content,
-            claim=call_budget.user_claimer(),
+    # 명령어 넷(/요약·/문서·/할일·/질문)과 일반 메시지가 모두 예산을 태운다.
+    # 소진을 여기서 안 잡으면 전역 핸들러가 500으로 받아, 이미 저장된 사용자
+    # 메시지 위에 "응답만 실패"가 남고 메시지마다 스택 트레이스가 찍힌다.
+    try:
+        if content.startswith("/"):
+            command, _, argument = content.partition(" ")
+            bot_message = _handle_command(db, room, command.strip(), argument.strip())
+        elif room.ai_mode:
+            # AI가 방에 들어와 있을 때만 대화를 읽는다. 평소엔 Gemini를 호출하지 않는다.
+            # 답변과 액션 추출을 한 번에 받는다 — 나눠 부르면 메시지 하나가
+            # 하루 한도에서 2건을 먹는다.
+            # 방금 저장한 메시지는 [메시지]로 따로 주므로 [지난 대화]에서 뺀다.
+            # 겹쳐 두면 같은 문장이 "새로 뽑을 것"과 "이미 등록된 것"에 동시에 걸린다.
+            turn = gemini_service.chat_reply_with_actions(
+                _recent_history(db, room_id, exclude_id=user_message.id),
+                content,
+                claim=call_budget.user_claimer(),
+            )
+            _apply_extracted_actions(db, group_id, turn)
+            db.commit()
+            # 실패하면 reply가 빈 문자열이다. 빈 말풍선을 남기지 않는다.
+            if turn["reply"]:
+                bot_message = _post_bot_message(db, room_id, turn["reply"])
+    except gemini_service.QuotaExceeded:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "AI_DAILY_BUDGET_EXHAUSTED",
+                "message": "오늘 AI 한도를 다 썼습니다. 내일 다시 이용해주세요.",
+            },
         )
-        _apply_extracted_actions(db, group_id, turn)
-        db.commit()
-        # 실패하면 reply가 빈 문자열이다. 빈 말풍선을 남기지 않는다.
-        if turn["reply"]:
-            bot_message = _post_bot_message(db, room_id, turn["reply"])
 
     todos = db.scalars(
         select(Todo)

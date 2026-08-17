@@ -91,7 +91,7 @@ def test_quota_exhaustion_returns_429_with_its_own_code(client, monkeypatch):
     res = _ask(client, owner["token"], group_id)
 
     assert res.status_code == 429
-    assert res.json()["error"]["code"] == "ASSISTANT_QUOTA_EXCEEDED"
+    assert res.json()["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"
     assert "잠시 후" not in res.json()["error"]["message"]
 
 
@@ -177,3 +177,18 @@ def test_dropped_actions_are_reported_in_reply(client, monkeypatch):
     body = res.json()["data"]
     assert body["actions"] == []
     assert "제외" in body["reply"]
+
+
+def test_예산_소진이면_429와_통일된_코드를_준다(client, monkeypatch):
+    """장부가 비면 Gemini를 부르기 전에 막힌다. answer_assistant를 가짜로
+    바꾸지 않는 것이 요점이다 — 실제로 호출이 안 나가는지 확인한다."""
+    import call_budget
+
+    monkeypatch.setattr(call_budget, "DAILY_TOTAL", 0)
+    monkeypatch.setattr(call_budget, "RESERVE", 0)
+
+    owner, group_id = _setup(client)
+    res = _ask(client, owner["token"], group_id, message="오늘 뭐 해야 해?")
+
+    assert res.status_code == 429
+    assert res.json()["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"
