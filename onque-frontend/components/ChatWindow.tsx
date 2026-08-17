@@ -7,7 +7,13 @@ import { RoomMembers } from '@/components/RoomMembers';
 import { ChatIntroNotice } from '@/components/ChatIntroNotice';
 import { SkeletonList } from '@/components/ui/Skeleton';
 import { BudgetNotice } from '@/components/ui/BudgetNotice';
-import { budgetExhaustedText, isBudgetExhausted, isBudgetExhaustedError } from '@/lib/ai-budget';
+import {
+  budgetExhaustedText,
+  isBudgetExhausted,
+  isBudgetExhaustedError,
+  isChatSendBlocked,
+  CHAT_BUDGET_ESCAPE_HINT,
+} from '@/lib/ai-budget';
 import {
   getChatMessages,
   sendChatMessage,
@@ -53,10 +59,12 @@ export function ChatWindow({
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // AI가 방에 없으면 Gemini를 부르지 않으므로 한도와 무관하다. 사람들끼리의
-  // 대화까지 막으면 예산과 상관없는 기능을 예산 때문에 잃는다.
-  const budgetBlocked = aiMode && isBudgetExhausted(aiBudget);
-  const sendDisabled = sending || !input.trim() || budgetBlocked;
+  // 예산은 AI 기능의 한도이지 채팅방의 한도가 아니다. 방을 통째로 잠그면
+  // 비서를 내보내는 /exit 조차 칠 수 없어 사람끼리의 대화까지 하루를 잃는다.
+  // 그래서 입력창은 열어두고 비서에게 가는 메시지만 막는다.
+  const budgetExhausted = aiMode && isBudgetExhausted(aiBudget);
+  const sendBlocked = isChatSendBlocked(input, aiMode, aiBudget);
+  const sendDisabled = sending || !input.trim() || sendBlocked;
 
   useEffect(() => {
     let cancelled = false;
@@ -98,7 +106,8 @@ export function ChatWindow({
 
   const handleSend = async () => {
     const content = input.trim();
-    if (!content || sending) return;
+    // 입력창이 열려 있으므로 Enter로도 들어온다. 버튼만 막으면 새 나간다.
+    if (!content || sending || sendBlocked) return;
 
     setSending(true);
     setErrorMsg('');
@@ -282,7 +291,7 @@ export function ChatWindow({
           }`}
         >
           {/* AI가 없는 방은 한도와 무관하니 안내도 띄우지 않는다. */}
-          {aiMode && <BudgetNotice id={budgetNoticeId} />}
+          {aiMode && <BudgetNotice id={budgetNoticeId} hint={CHAT_BUDGET_ESCAPE_HINT} />}
 
           <div className="flex items-end gap-2">
             <input
@@ -299,8 +308,8 @@ export function ChatWindow({
               placeholder={
                 aiMode ? '비서에게 말하거나 /exit 로 내보내기' : '메시지 입력 · /help 로 AI 부르기'
               }
-              disabled={sending || budgetBlocked}
-              aria-describedby={budgetBlocked ? budgetNoticeId : undefined}
+              disabled={sending}
+              aria-describedby={budgetExhausted ? budgetNoticeId : undefined}
               className={`flex-1 rounded-xl border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-foreground/30 focus:outline-none disabled:opacity-60 ${
                 aiMode ? 'border-brand/50 focus:border-brand' : 'border-border focus:border-brand'
               }`}
@@ -309,7 +318,7 @@ export function ChatWindow({
               type="button"
               onClick={handleSend}
               disabled={sendDisabled}
-              aria-describedby={budgetBlocked ? budgetNoticeId : undefined}
+              aria-describedby={budgetExhausted ? budgetNoticeId : undefined}
               className={`shrink-0 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
                 sendDisabled
                   ? 'cursor-not-allowed bg-foreground/10 text-foreground/30'

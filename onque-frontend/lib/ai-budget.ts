@@ -21,6 +21,30 @@ export function budgetExhaustedText(budget: AiBudget | null): string {
     : '오늘 AI 한도를 다 썼습니다. 내일 다시 이용해주세요.';
 }
 
+/** 채팅방에만 덧붙이는 탈출구 안내.
+ *
+ * 예산은 AI 기능의 한도이지 채팅방의 한도가 아니다. 소진됐다는 사실만 알리고
+ * 나갈 길을 안 알려주면 사용자는 방이 고장 난 줄 안다.
+ * 요약·비서 화면에는 /exit 개념이 없어 이 문장을 공유하지 않는다. */
+export const CHAT_BUDGET_ESCAPE_HINT =
+  '/ 로 시작하는 명령은 보낼 수 있습니다. /exit 로 비서를 내보내면 대화를 이어갈 수 있습니다.';
+
+/** 소진 상태에서 이 채팅 입력을 막아야 하는가.
+ *
+ * 명령은 막지 않는다. /exit·/help는 모델을 부르지 않아 통과해야 하고,
+ * /요약·/문서는 서버 예산 문이 429로 가른다 — 어느 명령이 모델을 부르는지를
+ * 프론트가 따로 외우면 서버가 바뀔 때 조용히 어긋난다. 가르는 일은 서버에 두고,
+ * 여기서는 "명령이냐 아니냐"만 본다. */
+export function isChatSendBlocked(
+  input: string,
+  aiMode: boolean,
+  budget: AiBudget | null,
+): boolean {
+  // AI가 방에 없으면 Gemini를 부르지 않으므로 한도와 무관하다.
+  if (!aiMode || !isBudgetExhausted(budget)) return false;
+  return !input.trim().startsWith('/');
+}
+
 /** 서버가 한도 소진으로 거절했는가.
  *
  * 화면의 예산 값은 워크스페이스를 불러온 시점의 것이라 연달아 보내면 실제보다
