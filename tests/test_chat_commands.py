@@ -1,5 +1,8 @@
+import logging
+
 import pytest
 from google.genai import errors as genai_errors
+from sqlalchemy import select
 
 import gemini_service
 from models import ChatMessage, Document, Todo
@@ -206,9 +209,11 @@ def test_병합_호출은_답변과_액션을_한_번에_돌려준다(monkeypatc
     assert result["complete_todo_hints"] == []
 
 
-def test_병합_호출이_실패하면_답변도_액션도_없다(monkeypatch):
-    """합친 대가다. 지금은 추출이 실패해도 답변은 나갔지만, 한 번에
-    받으므로 한 번의 실패가 둘 다 잃는다. 대신 호출은 1건만 태운다."""
+def test_병합_호출이_실패하면_액션은_없지만_사과는_한다(monkeypatch):
+    """합친 대가로 한 번의 실패가 답변과 액션을 둘 다 잃는다. 그래도 실패를
+    사용자에게 알리기는 해야 한다 — 병합 전 generate_bot_reply는 사과 문구를
+    냈다. 빈 문자열로 돌려주면 호출부가 말풍선을 안 남기고, 화면에는 아무 일도
+    일어나지 않는다."""
 
     def boom(**kwargs):
         raise RuntimeError("모델 실패")
@@ -217,7 +222,8 @@ def test_병합_호출이_실패하면_답변도_액션도_없다(monkeypatch):
 
     result = gemini_service.chat_reply_with_actions([], "아무 말", claim=lambda: True)
 
-    assert result["reply"] == ""
+    assert result["reply"] == gemini_service.CHAT_TURN_FAILURE_REPLY
+    assert result["reply"] != ""
     assert result["add_todos"] == []
 
 
@@ -315,6 +321,30 @@ def test_답변이_비면_봇_메시지를_남기지_않는다(client, monkeypat
     assert result["bot_message"] is None
     after = db_session.query(ChatMessage).filter(ChatMessage.is_bot.is_(True)).count()
     assert after == before
+
+
+def test_비서가_고장나면_말풍선으로_알린다(client, monkeypatch, db_session):
+    """이 방의 피드백 채널은 말풍선뿐이다. 조용히 200으로 끝내면 "비서가 답할
+    게 없었다"와 "비서가 고장났다"가 구분되지 않는다."""
+    auth, _, room_id = _setup(client)
+    _say(client, auth, room_id, "/help")
+
+    def boom(**kwargs):
+        raise RuntimeError("모델 실패")
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", boom)
+
+    res = _post_message(client, auth, room_id, "내일까지 견적서 보낼게요")
+
+    assert res.status_code == 200
+    content = res.json()["bot_message"]["content"]
+    assert content == gemini_service.CHAT_TURN_FAILURE_REPLY
+    # 소진(429)과 문구가 같으면 안 된다. 하나는 내일까지 계속 실패하고
+    # 하나는 잠시 뒤 되므로, 사용자가 할 행동이 다르다.
+    assert "한도" not in content
+
+    saved = db_session.query(ChatMessage).filter(ChatMessage.is_bot.is_(True)).all()
+    assert saved[-1].content == gemini_service.CHAT_TURN_FAILURE_REPLY
 
 
 def test_병합_호출은_한도_소진을_삼키지_않는다(monkeypatch):
@@ -435,9 +465,9 @@ def test_예산_소진이면_채팅_경로가_429를_준다(client, monkeypatch,
     assert res.json()["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"
 
 
-def test_문서_분류_폴백에서_소진돼도_429다(client, monkeypatch):
-    """업로드 쪽에서 샜던 것과 같은 모양의 '두 번째 호출'이다. 채팅은
-    _handle_command 전체를 감싸 이미 덮여 있다 — 덮여 있음을 고정한다."""
+def test_문서_분류만_소진되면_기타로_강등하고_초안은_남는다(client, db_session, monkeypatch, caplog):
+    """업로드 쪽과 같은 모양의 '두 번째 호출'이다. 초안은 이미 예산을 태워
+    만들어졌다. 장식 필드인 분류 때문에 그 초안을 버리면 안 된다."""
     auth, _, room_id = _setup(client)
 
     structured = {
@@ -458,7 +488,18 @@ def test_문서_분류_폴백에서_소진돼도_429다(client, monkeypatch):
 
     monkeypatch.setattr(gemini_service, "classify_document_category", boom)
 
-    res = _post_message(client, auth, room_id, "/문서 회의록")
+    with caplog.at_level(logging.WARNING):
+        res = _post_message(client, auth, room_id, "/문서 회의록")
 
-    assert res.status_code == 429
-    assert res.json()["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"
+    assert res.status_code == 200
+    assert "회의록" in res.json()["bot_message"]["content"]
+
+    doc = db_session.scalars(select(Document)).one()
+    assert doc.category == "기타"
+    assert "출시일 확정" in doc.summary
+
+    assert any(
+        record.levelname == "WARNING"
+        and getattr(record, "event", "") == "document.classify.budget_exhausted"
+        for record in caplog.records
+    )

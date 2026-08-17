@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -309,10 +310,11 @@ def test_summarize_endpoint_returns_429_with_its_own_code(client, monkeypatch):
     assert res.json()["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"
 
 
-def test_분류_폴백에서_소진돼도_429다(client, monkeypatch):
-    """구조화 파싱이 실패해 분류 폴백까지 가는 경로다. 방금 요약으로 예산을
-    태운 직후라 여기서 소진될 확률이 가장 높은데, 이 호출은 요약을 감싼
-    try 밖에 있어 500으로 샜다."""
+def test_분류만_소진되면_기타로_강등하고_요약은_남는다(client, monkeypatch, caplog):
+    """구조화 파싱이 실패해 분류 폴백까지 가는 경로다. 여기 도달했다는 건 요약이
+    이미 1차+폴백으로 예산 2건을 태웠다는 뜻이다. 분류는 다른 모든 실패에서 이미
+    '기타'로 강등되는 장식 필드인데, 소진일 때만 429로 요청을 죽이면 사용자는
+    태운 2건과 다 만든 요약을 통째로 잃는다."""
     token, group_id = _setup_group(client)
 
     async def plain_only(file, prompt, **kwargs):
@@ -324,15 +326,30 @@ def test_분류_폴백에서_소진돼도_429다(client, monkeypatch):
     monkeypatch.setattr(gemini_service, "summarize_upload", plain_only)
     monkeypatch.setattr(gemini_service, "classify_document_category", boom)
 
-    res = client.post(
-        "/summarize-document",
-        params={"group_id": group_id},
-        files={"file": ("meeting.txt", b"content", "text/plain")},
-        headers={"Authorization": f"Bearer {token}"},
+    with caplog.at_level(logging.WARNING):
+        res = client.post(
+            "/summarize-document",
+            params={"group_id": group_id},
+            files={"file": ("meeting.txt", b"content", "text/plain")},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["category"] == "기타"
+    assert body["summary"] == "평문 요약"
+
+    # 조용히 넘어가면 안 된다. 폴백이 도는 것 자체가 비정상 신호다.
+    assert any(
+        record.levelname == "WARNING"
+        and getattr(record, "event", "") == "document.classify.budget_exhausted"
+        for record in caplog.records
     )
 
-    assert res.status_code == 429
-    assert res.json()["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"
+    listed = client.get(
+        "/documents", params={"group_id": group_id}, headers={"Authorization": f"Bearer {token}"}
+    ).json()
+    assert [d["category"] for d in listed] == ["기타"]
 
 
 # ── 수동 할 일 등록 ──────────────────────────────────────────

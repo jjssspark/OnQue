@@ -201,6 +201,26 @@ def _raise_ai_budget_exhausted() -> NoReturn:
     )
 
 
+def _classify_or_default(summary_text: str) -> str:
+    """분류 폴백. 예산이 소진돼 있으면 '기타'로 강등한다.
+
+    요청 전체를 429로 끝내지 않는 이유: 여기까지 왔다는 건 요약이 이미 예산을
+    태워 완성됐다는 뜻이다. 분류는 다른 모든 실패에서 이미 '기타'로 떨어지는
+    장식 필드인데(gemini_service.classify_document_category), 소진일 때만
+    요청을 죽이면 사용자는 태운 예산과 다 만든 요약을 함께 잃는다.
+    """
+    try:
+        return gemini_service.classify_document_category(
+            summary_text, claim=call_budget.user_claimer()
+        )
+    except gemini_service.QuotaExceeded:
+        logger.warning(
+            "AI 예산 소진으로 문서 분류를 건너뛴다 — category=기타",
+            extra={"event": "document.classify.budget_exhausted"},
+        )
+        return "기타"
+
+
 async def _summarize_and_store(
     db: Session,
     group_id: int,
@@ -224,15 +244,7 @@ async def _summarize_and_store(
     # 부른다. 실측 1,637ms짜리 호출이라 정상 경로에서는 뺐다.
     category = category or (structured or {}).get("category")
     if not category:
-        # 이 폴백은 위 요약이 이미 예산을 태운 뒤에 도는 두 번째 호출이라,
-        # 소진을 만날 확률이 오히려 높은 자리다. 좁게만 감싼다 — Document
-        # 생성이나 DB 오류까지 429로 뭉개면 엉뚱한 안내가 나간다.
-        try:
-            category = gemini_service.classify_document_category(
-                summary_text, claim=call_budget.user_claimer()
-            )
-        except gemini_service.QuotaExceeded:
-            _raise_ai_budget_exhausted()
+        category = _classify_or_default(summary_text)
 
     doc = Document(
         group_id=group_id,
@@ -1047,10 +1059,7 @@ def _handle_command(
             # 분류는 초안 응답에 함께 온다(_SUMMARY_SCHEMA에 category가 있다).
             # 업로드 경로와 같은 폴백 형태다 — 구조화 파싱이 category를 못
             # 채웠을 때만 모델을 한 번 더 부른다.
-            category=structured.get("category")
-            or gemini_service.classify_document_category(
-                summary_text, claim=call_budget.user_claimer()
-            ),
+            category=structured.get("category") or _classify_or_default(summary_text),
             filename=title,
             summary=summary_text,
             summary_json=json.dumps(structured, ensure_ascii=False),

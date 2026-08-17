@@ -662,6 +662,14 @@ _CHAT_TURN_PROMPT = """
 """
 
 
+# 한 턴이 실패했을 때 사용자에게 내보내는 말풍선.
+# 조용히 끝내지 않는 이유: 이 방의 피드백 채널은 말풍선뿐이라, 아무것도 안
+# 남기면 "비서가 답할 게 없었다"와 "비서가 고장났다"가 구분되지 않는다.
+# 한도 소진과 문구를 달리 두는 이유: 소진은 QuotaExceeded로 따로 나가 429가
+# 되고 리셋까지 계속 실패하지만, 이건 잠시 뒤 다시 하면 된다.
+CHAT_TURN_FAILURE_REPLY = "죄송해요, 지금은 답변을 만들지 못했어요. 잠시 후 다시 시도해주세요."
+
+
 def chat_reply_with_actions(
     recent_messages: list[dict], message: str, *, claim: Callable[[], bool]
 ) -> dict:
@@ -702,7 +710,7 @@ def chat_reply_with_actions(
     except Exception as exc:
         _reraise_if_quota(exc, "chat.turn.quota_exceeded")
         logger.warning("채팅 턴 처리 실패", extra={"event": "chat.turn.failed"})
-        return dict(empty)
+        return {**empty, "reply": CHAT_TURN_FAILURE_REPLY}
 
 
 def _format_history(messages: list[dict]) -> str:
