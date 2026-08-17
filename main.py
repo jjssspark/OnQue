@@ -1142,7 +1142,8 @@ def create_chat_message(
             )
             _apply_extracted_actions(db, group_id, turn)
             db.commit()
-            # 실패하면 reply가 빈 문자열이다. 빈 말풍선을 남기지 않는다.
+            # 실패는 이제 안내 문구를 싣고 온다. 빈 문자열은 모델이 정말 빈 답을
+            # 준 경우뿐이고, 그때 빈 말풍선을 남기지 않는다.
             if turn["reply"]:
                 bot_message = _post_bot_message(db, room_id, turn["reply"])
     except gemini_service.QuotaExceeded:
