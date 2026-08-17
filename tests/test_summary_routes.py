@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -34,12 +35,12 @@ def _setup_group(client):
 
 
 def _stub_gemini(monkeypatch, structured):
-    async def fake_summarize(file, prompt):
+    async def fake_summarize(file, prompt, **kwargs):
         text = gemini_service.render_summary_text(structured) if structured else "평문 요약"
         return structured, text
 
     monkeypatch.setattr(gemini_service, "summarize_upload", fake_summarize)
-    monkeypatch.setattr(gemini_service, "classify_document_category", lambda text: "기획")
+    monkeypatch.setattr(gemini_service, "classify_document_category", lambda text, **kw: "기획")
 
 
 # ── 요약 정규화/렌더 ──────────────────────────────────────────
@@ -203,7 +204,7 @@ def test_summarize_stops_on_quota_instead_of_retrying(monkeypatch):
     upload = UploadFile(file=io.BytesIO("회의록 내용".encode()), filename="meeting.txt")
 
     with pytest.raises(gemini_service.QuotaExceeded):
-        asyncio.run(gemini_service.summarize_upload(upload, "요약해라"))
+        asyncio.run(gemini_service.summarize_upload(upload, "요약해라", claim=lambda: True))
 
     assert len(calls) == 1
 
@@ -226,11 +227,66 @@ def test_summarize_still_falls_back_on_other_errors(monkeypatch):
     )
 
     upload = UploadFile(file=io.BytesIO("회의록 내용".encode()), filename="meeting.txt")
-    structured, text = asyncio.run(gemini_service.summarize_upload(upload, "요약해라"))
+    structured, text = asyncio.run(gemini_service.summarize_upload(upload, "요약해라", claim=lambda: True))
 
     assert structured is None
     assert text == "평문 요약"
     assert len(calls) == 2
+
+
+def test_폴백이_돌면_예산도_두_건_선점한다(monkeypatch):
+    """폴백은 모델 호출이 실제로 한 번 더 나가는 경로다. 진입부에서 1건만
+    선점하면 장부가 실제 소비를 못 따라가고, 폴백이 잦은 날 한도를 넘긴다."""
+    calls = []
+
+    def flaky(**kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise ValueError("구조화 파싱 실패")
+        return SimpleNamespace(text="평문 요약")
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", flaky)
+    monkeypatch.setattr(
+        gemini_service.client.files, "upload", lambda **kwargs: SimpleNamespace(name="files/x")
+    )
+
+    claimed = []
+    upload = UploadFile(file=io.BytesIO("회의록 내용".encode()), filename="meeting.txt")
+    asyncio.run(
+        gemini_service.summarize_upload(
+            upload, "요약해라", claim=lambda: claimed.append(1) or True
+        )
+    )
+
+    assert len(calls) == 2
+    assert len(claimed) == 2, "2차 호출이 나갔는데 예산은 1건만 깎였다"
+
+
+def test_폴백_직전에_예산이_없으면_업로드도_2차_호출도_없다(monkeypatch):
+    """File API 업로드는 오직 2차 호출을 먹이려고 존재한다(실측 2.7~3.0초).
+    예산이 없으면 그 왕복을 태울 이유가 없다. 첫 1건은 환불하지 않는다 —
+    그 호출은 실제로 나갔다."""
+    calls = []
+
+    def flaky(**kwargs):
+        calls.append(1)
+        raise ValueError("구조화 파싱 실패")
+
+    def no_upload(**kwargs):
+        raise AssertionError("예산이 없는데 File API 업로드를 시도했다")
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", flaky)
+    monkeypatch.setattr(gemini_service.client.files, "upload", no_upload)
+
+    budget = [True, False]
+    upload = UploadFile(file=io.BytesIO("회의록 내용".encode()), filename="meeting.txt")
+
+    with pytest.raises(gemini_service.QuotaExceeded):
+        asyncio.run(
+            gemini_service.summarize_upload(upload, "요약해라", claim=lambda: budget.pop(0))
+        )
+
+    assert len(calls) == 1
 
 
 def test_summarize_endpoint_returns_429_with_its_own_code(client, monkeypatch):
@@ -238,7 +294,7 @@ def test_summarize_endpoint_returns_429_with_its_own_code(client, monkeypatch):
     그 재시도도 전부 실패한다."""
     token, group_id = _setup_group(client)
 
-    async def boom(file, prompt):
+    async def boom(file, prompt, **kwargs):
         raise gemini_service.QuotaExceeded()
 
     monkeypatch.setattr(gemini_service, "summarize_upload", boom)
@@ -251,7 +307,49 @@ def test_summarize_endpoint_returns_429_with_its_own_code(client, monkeypatch):
     )
 
     assert res.status_code == 429
-    assert res.json()["error"]["code"] == "DOCUMENT_QUOTA_EXCEEDED"
+    assert res.json()["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"
+
+
+def test_분류만_소진되면_기타로_강등하고_요약은_남는다(client, monkeypatch, caplog):
+    """구조화 파싱이 실패해 분류 폴백까지 가는 경로다. 여기 도달했다는 건 요약이
+    이미 1차+폴백으로 예산 2건을 태웠다는 뜻이다. 분류는 다른 모든 실패에서 이미
+    '기타'로 강등되는 장식 필드인데, 소진일 때만 429로 요청을 죽이면 사용자는
+    태운 2건과 다 만든 요약을 통째로 잃는다."""
+    token, group_id = _setup_group(client)
+
+    async def plain_only(file, prompt, **kwargs):
+        return None, "평문 요약"
+
+    def boom(text, **kwargs):
+        raise gemini_service.QuotaExceeded()
+
+    monkeypatch.setattr(gemini_service, "summarize_upload", plain_only)
+    monkeypatch.setattr(gemini_service, "classify_document_category", boom)
+
+    with caplog.at_level(logging.WARNING):
+        res = client.post(
+            "/summarize-document",
+            params={"group_id": group_id},
+            files={"file": ("meeting.txt", b"content", "text/plain")},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["category"] == "기타"
+    assert body["summary"] == "평문 요약"
+
+    # 조용히 넘어가면 안 된다. 폴백이 도는 것 자체가 비정상 신호다.
+    assert any(
+        record.levelname == "WARNING"
+        and getattr(record, "event", "") == "document.classify.budget_exhausted"
+        for record in caplog.records
+    )
+
+    listed = client.get(
+        "/documents", params={"group_id": group_id}, headers={"Authorization": f"Bearer {token}"}
+    ).json()
+    assert [d["category"] for d in listed] == ["기타"]
 
 
 # ── 수동 할 일 등록 ──────────────────────────────────────────
@@ -327,7 +425,11 @@ def test_통화_요약_프롬프트에_오늘_날짜가_들어간다(monkeypatch
     seen = _capture_upload_prompt(monkeypatch)
     upload = UploadFile(filename="통화.wav", file=io.BytesIO(b"fake audio"))
 
-    asyncio.run(gemini_service.summarize_upload(upload, gemini_service.CALL_SUMMARY_PROMPT))
+    asyncio.run(
+        gemini_service.summarize_upload(
+            upload, gemini_service.CALL_SUMMARY_PROMPT, claim=lambda: True
+        )
+    )
 
     assert gemini_service.korean_date_context() in seen["contents"][-1]
 
@@ -337,7 +439,11 @@ def test_문서_요약_프롬프트에_오늘_날짜가_들어간다(monkeypatch
     seen = _capture_upload_prompt(monkeypatch)
     upload = UploadFile(filename="회의록.txt", file=io.BytesIO(b"fake text"))
 
-    asyncio.run(gemini_service.summarize_upload(upload, gemini_service.DOCUMENT_SUMMARY_PROMPT))
+    asyncio.run(
+        gemini_service.summarize_upload(
+            upload, gemini_service.DOCUMENT_SUMMARY_PROMPT, claim=lambda: True
+        )
+    )
 
     assert gemini_service.korean_date_context() in seen["contents"][-1]
 
@@ -347,6 +453,10 @@ def test_날짜를_붙여도_원래_지시가_남는다(monkeypatch):
     seen = _capture_upload_prompt(monkeypatch)
     upload = UploadFile(filename="통화.wav", file=io.BytesIO(b"fake audio"))
 
-    asyncio.run(gemini_service.summarize_upload(upload, gemini_service.CALL_SUMMARY_PROMPT))
+    asyncio.run(
+        gemini_service.summarize_upload(
+            upload, gemini_service.CALL_SUMMARY_PROMPT, claim=lambda: True
+        )
+    )
 
     assert gemini_service.CALL_SUMMARY_PROMPT in seen["contents"][-1]

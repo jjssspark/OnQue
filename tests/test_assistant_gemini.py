@@ -24,7 +24,9 @@ def test_answer_assistant_returns_reply_and_actions(monkeypatch):
 
     monkeypatch.setattr(gemini_service.client.models, "generate_content", fake_generate)
 
-    result = gemini_service.answer_assistant("[약속]\n- id=1 | 시안", [], "약속 뭐 있지?")
+    result = gemini_service.answer_assistant(
+        "[약속]\n- id=1 | 시안", [], "약속 뭐 있지?", claim=lambda: True
+    )
 
     assert result["reply"] == "약속은 2건입니다."
     assert result["actions"][0]["kind"] == "todo_add"
@@ -46,6 +48,7 @@ def test_answer_assistant_includes_history(monkeypatch):
         "ctx",
         [{"role": "user", "content": "앞선 질문"}, {"role": "assistant", "content": "앞선 답"}],
         "그래서?",
+        claim=lambda: True,
     )
 
     assert "앞선 질문" in captured["contents"]
@@ -60,7 +63,7 @@ def test_answer_assistant_returns_none_on_failure(monkeypatch):
 
     monkeypatch.setattr(gemini_service.client.models, "generate_content", explode)
 
-    assert gemini_service.answer_assistant("ctx", [], "질문") is None
+    assert gemini_service.answer_assistant("ctx", [], "질문", claim=lambda: True) is None
 
 
 def test_answer_assistant_returns_none_on_malformed_json(monkeypatch):
@@ -70,7 +73,7 @@ def test_answer_assistant_returns_none_on_malformed_json(monkeypatch):
         lambda **kwargs: SimpleNamespace(text="이건 JSON이 아니다"),
     )
 
-    assert gemini_service.answer_assistant("ctx", [], "질문") is None
+    assert gemini_service.answer_assistant("ctx", [], "질문", claim=lambda: True) is None
 
 
 def _client_error(code):
@@ -89,7 +92,7 @@ def test_quota_exceeded_is_raised_not_swallowed(monkeypatch):
     monkeypatch.setattr(gemini_service.client.models, "generate_content", boom)
 
     with pytest.raises(gemini_service.QuotaExceeded):
-        gemini_service.answer_assistant("ctx", [], "질문")
+        gemini_service.answer_assistant("ctx", [], "질문", claim=lambda: True)
 
 
 def test_other_client_errors_still_return_none(monkeypatch):
@@ -99,7 +102,7 @@ def test_other_client_errors_still_return_none(monkeypatch):
 
     monkeypatch.setattr(gemini_service.client.models, "generate_content", boom)
 
-    assert gemini_service.answer_assistant("ctx", [], "질문") is None
+    assert gemini_service.answer_assistant("ctx", [], "질문", claim=lambda: True) is None
 
 
 def test_actions_default_to_empty_list(monkeypatch):
@@ -109,6 +112,6 @@ def test_actions_default_to_empty_list(monkeypatch):
         lambda **kwargs: _fake_response({"reply": "답만 있음"}),
     )
 
-    result = gemini_service.answer_assistant("ctx", [], "질문")
+    result = gemini_service.answer_assistant("ctx", [], "질문", claim=lambda: True)
 
     assert result == {"reply": "답만 있음", "actions": []}

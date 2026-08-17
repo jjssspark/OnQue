@@ -101,7 +101,6 @@ def test_list_meta_reports_sweep_never_run(client, db_session):
     assert sweep["last_at"] is None
     assert sweep["scanned"] is None
     assert sweep["found"] is None
-    assert sweep["budget_total"] > 0
 
 
 def test_list_meta_reports_last_sweep_result(client, db_session):
@@ -394,3 +393,23 @@ def test_bulk_status_rejects_all_if_one_is_foreign(client, db_session):
 
     db_session.expire_all()
     assert db_session.get(Commitment, mine.id).status == "proposed"
+
+
+def test_약속_목록_meta에_ai_budget이_실린다(client):
+    auth, group_id, _ = _setup(client)
+
+    res = client.get("/api/v1/commitments", params={"group_id": group_id}, headers=auth)
+    assert res.status_code == 200
+
+    budget = res.json()["meta"]["ai_budget"]
+    assert budget["total"] == 20
+    assert budget["used"] >= 0
+    assert budget["resets_at"].endswith("Z")
+
+
+def test_sweep_meta에는_예산이_없다(client):
+    """예산은 스윕 소속이 아니다. 두 곳에 두면 어느 쪽이 참인지 모른다."""
+    auth, group_id, _ = _setup(client)
+
+    res = client.get("/api/v1/commitments", params={"group_id": group_id}, headers=auth)
+    assert set(res.json()["meta"]["sweep"]) == {"last_at", "scanned", "found"}

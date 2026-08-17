@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Surface } from '@/components/ui/Surface';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { buildSweepStatus } from '@/lib/sweep-status';
+import { isBudgetExhausted } from '@/lib/ai-budget';
 import type { Metric } from '@/lib/metrics';
 import type { DocumentRecord, ScheduleItem } from '@/lib/api';
 
@@ -92,23 +93,30 @@ export function SummaryColumn({ metrics, schedules, documents }: Props) {
  * 아직 한 번도 안 훑었으면 아무것도 그리지 않는다. "0건 찾음"을 띄우면
  * 일하고 있는데 성과가 없는 것처럼 읽힌다. */
 function SweepStatusLine() {
-  const { sweep, lastSyncedAt } = useWorkspace();
+  const { sweep, aiBudget, lastSyncedAt } = useWorkspace();
   // 기준 시각으로 Date.now()가 아니라 마지막 동기화 시각을 쓴다. 렌더 중
   // Date.now()를 부르면 같은 상태에서 매번 다른 화면이 나와 순수성이 깨지고,
   // 의미상으로도 이게 맞다 — "이 데이터가 도착한 시점 기준 경과"다.
   // 조회가 30초마다 돌아 값이 따라 갱신되고, 스윕 간격은 10분이라 티가 없다.
   if (sweep === null || lastSyncedAt === null) return null;
+
   const status = buildSweepStatus(sweep, lastSyncedAt);
-  if (status.line === null) return null;
+  if (status.line === null && aiBudget === null) return null;
+
+  const exhausted = isBudgetExhausted(aiBudget);
 
   return (
     <div className="mt-4 border-t border-hairline pt-4">
       <p className="text-[10px] font-semibold text-fg-dim">자동 확인</p>
-      <p className="mt-2 text-[11px] leading-relaxed text-fg-muted">{status.line}</p>
-      <p className="mt-1 text-[10px] tabular-nums text-fg-dim">
-        오늘 {sweep.budget_used}/{sweep.budget_total}
-        {status.exhausted && ' · 한도를 다 써 내일 이어서 확인합니다'}
-      </p>
+      {status.line && (
+        <p className="mt-2 text-[11px] leading-relaxed text-fg-muted">{status.line}</p>
+      )}
+      {aiBudget && (
+        <p className="mt-1 text-[10px] tabular-nums text-fg-dim">
+          오늘 {aiBudget.used}/{aiBudget.total}
+          {exhausted && ' · 한도를 다 써 내일 이어서 확인합니다'}
+        </p>
+      )}
     </div>
   );
 }

@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
+import call_budget
 import commitment_service
 from auth import get_current_user
 from db import get_db
@@ -176,10 +177,25 @@ def _sweep_meta(db: Session, group_id: int) -> dict:
         "last_at": _utc_iso(row.last_scan_at),
         "scanned": row.last_sweep_scanned,
         "found": row.last_sweep_found,
-        # 예산은 그룹이 아니라 서버 전체가 나눠 쓴다. 남은 양이 보여야
-        # "왜 오늘은 안 도는지"를 화면에서 설명할 수 있다.
-        "budget_used": commitment_service.sweep_calls_used_today(db),
-        "budget_total": commitment_service.SWEEP_DAILY_BUDGET,
+    }
+
+
+def _ai_budget_meta(db: Session) -> dict:
+    """오늘 AI 호출을 얼마나 썼는지. 화면이 소진 전에 미리 막기 위한 값이다.
+
+    스윕 메타와 분리해 둔다 — 예산은 스윕만의 것이 아니라 요약·비서·채팅이
+    함께 쓴다. sweep 아래에 두면 스윕이 안 도는 날엔 예산도 없는 줄 안다.
+
+    이 조회에 얹는 이유: 프론트가 30초마다 이 엔드포인트를 부르고 있어
+    별도 폴링을 만들 필요가 없다.
+    """
+    # api-contract의 ISO 8601 UTC 표기는 "Z"다. isoformat()은 "+00:00"을 내므로
+    # 여기서 바꾼다. sweep.last_at은 이미 나가 있는 형식이라 건드리지 않는다.
+    resets_at = _utc_iso(call_budget.resets_at()).replace("+00:00", "Z")
+    return {
+        "used": call_budget.used_today(db),
+        "total": call_budget.DAILY_TOTAL,
+        "resets_at": resets_at,
     }
 
 
@@ -246,6 +262,7 @@ def list_commitments(
         "limit": limit,
         "hasNext": total > limit,
         "sweep": _sweep_meta(db, group_id),
+        "ai_budget": _ai_budget_meta(db),
     }
     return _ok(
         [_serialize_commitment(c, names.get(c.client_id), today) for c in rows], meta

@@ -3,7 +3,9 @@ from unittest.mock import MagicMock
 
 from sqlalchemy import select
 
+import call_budget
 import commitment_service
+import gemini_service
 from models import ChatMessage, ChatRoom, ChatRoomMember, Commitment, Group
 
 
@@ -65,7 +67,15 @@ def _stub_extractor(monkeypatch, items):
     쿨다운/임계값 테스트는 이 mock이 호출되지 않았음을 직접 단언해야 한다.
     """
     mock = MagicMock(return_value=items)
-    monkeypatch.setattr(commitment_service.gemini_service, "extract_chat_commitments", mock)
+
+    def gated(history_text, *, claim):
+        # 진짜 함수와 같은 순서로 문을 지난다. 스텁이 예산을 건너뛰면
+        # 예산 테스트가 아무것도 검사하지 못한 채 초록으로 남는다.
+        if not claim():
+            raise gemini_service.QuotaExceeded
+        return mock(history_text)
+
+    monkeypatch.setattr(commitment_service.gemini_service, "extract_chat_commitments", gated)
     return mock
 
 
@@ -151,7 +161,7 @@ def test_sweep_failure_does_not_raise(client, db_session, monkeypatch):
     group = _seed_group(client, db_session)
     room = _make_room(db_session, group.id, message_count=20, created_by=group.created_by)
 
-    def boom(text):
+    def boom(text, **kwargs):
         raise RuntimeError("모델 폭발")
 
     monkeypatch.setattr(commitment_service.gemini_service, "extract_chat_commitments", boom)
@@ -180,7 +190,7 @@ def test_sweep_isolates_room_failure_from_other_rooms(client, db_session, monkey
         db_session, group.id, message_count=20, created_by=group.created_by, name="폭발방"
     )
 
-    def fake_extract(text):
+    def fake_extract(text, **kwargs):
         if "폭발방" in text:
             raise RuntimeError("방 폭발")
         return _SAMPLE
@@ -301,7 +311,7 @@ def test_concurrent_sweep_second_caller_loses_to_the_first(client, db_session, m
 
     second_call_result = {}
 
-    def extractor_that_races(text):
+    def extractor_that_races(text, **kwargs):
         concurrent_session = TestSessionLocal()
         try:
             second_call_result["scanned"] = commitment_service.maybe_sweep(
@@ -374,7 +384,7 @@ def test_list_endpoint_survives_sweep_failure_with_existing_data_intact(
 
     _make_room(db_session, group["id"], message_count=20, created_by=admin_id)
 
-    def boom(text):
+    def boom(text, **kwargs):
         raise RuntimeError("모델 폭발")
 
     monkeypatch.setattr(commitment_service.gemini_service, "extract_chat_commitments", boom)
@@ -394,7 +404,9 @@ def test_list_endpoint_survives_sweep_failure_with_existing_data_intact(
 
 
 def _set_budget(monkeypatch, limit):
-    monkeypatch.setattr(commitment_service, "SWEEP_DAILY_BUDGET", limit)
+    """스윕 상한은 총량 - 예비선이다. 예비선을 0으로 두고 총량으로 상한을 잡는다."""
+    monkeypatch.setattr(call_budget, "DAILY_TOTAL", limit)
+    monkeypatch.setattr(call_budget, "RESERVE", 0)
 
 
 def test_예산이_남아있으면_평소대로_스캔한다(client, db_session, monkeypatch):
@@ -439,7 +451,7 @@ def test_기준_미만인_방은_예산을_쓰지_않는다(client, db_session, 
 
     assert commitment_service.maybe_sweep(db_session, group.id) == 0
     mock.assert_not_called()
-    assert commitment_service.sweep_calls_used_today(db_session) == 0
+    assert call_budget.used_today(db_session) == 0
 
 
 def test_예산은_그룹이_아니라_전체_공유다(client, db_session, monkeypatch):
@@ -469,14 +481,10 @@ def test_추출_실패해도_예산은_소비된_채로_남는다(client, db_ses
     _set_budget(monkeypatch, 8)
     group = _seed_group(client, db_session)
     _make_room(db_session, group.id, message_count=15, created_by=group.created_by)
-    monkeypatch.setattr(
-        commitment_service.gemini_service,
-        "extract_chat_commitments",
-        MagicMock(return_value=None),
-    )
+    _stub_extractor(monkeypatch, None)
 
     assert commitment_service.maybe_sweep(db_session, group.id) == 0
-    assert commitment_service.sweep_calls_used_today(db_session) == 1
+    assert call_budget.used_today(db_session) == 1
 
 
 # ── 스윕 결과 기록 ────────────────────────────────────────────

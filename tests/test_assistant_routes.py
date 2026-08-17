@@ -39,7 +39,7 @@ def test_answers_with_envelope(client, monkeypatch):
     owner, group_id = _setup(client)
     monkeypatch.setattr(
         gemini_service, "answer_assistant",
-        lambda ctx, hist, msg: {"reply": "약속은 없습니다.", "actions": []},
+        lambda ctx, hist, msg, **kw: {"reply": "약속은 없습니다.", "actions": []},
     )
 
     res = _ask(client, owner["token"], group_id)
@@ -57,7 +57,7 @@ def test_non_member_gets_403(client, monkeypatch):
     outsider = _signup(client, "outsider@onque.dev", "외부인")
     monkeypatch.setattr(
         gemini_service, "answer_assistant",
-        lambda ctx, hist, msg: {"reply": "여기 오면 안 된다", "actions": []},
+        lambda ctx, hist, msg, **kw: {"reply": "여기 오면 안 된다", "actions": []},
     )
 
     res = _ask(client, outsider["token"], group_id)
@@ -69,7 +69,7 @@ def test_non_member_gets_403(client, monkeypatch):
 def test_gemini_failure_returns_502_envelope(client, monkeypatch):
     """실패를 조용히 넘기면 '답이 없음'과 '모델이 죽음'이 구분되지 않는다."""
     owner, group_id = _setup(client)
-    monkeypatch.setattr(gemini_service, "answer_assistant", lambda ctx, hist, msg: None)
+    monkeypatch.setattr(gemini_service, "answer_assistant", lambda ctx, hist, msg, **kw: None)
 
     res = _ask(client, owner["token"], group_id)
 
@@ -83,7 +83,7 @@ def test_quota_exhaustion_returns_429_with_its_own_code(client, monkeypatch):
     반복한다."""
     owner, group_id = _setup(client)
 
-    def boom(ctx, hist, msg):
+    def boom(ctx, hist, msg, **kwargs):
         raise gemini_service.QuotaExceeded()
 
     monkeypatch.setattr(gemini_service, "answer_assistant", boom)
@@ -91,7 +91,7 @@ def test_quota_exhaustion_returns_429_with_its_own_code(client, monkeypatch):
     res = _ask(client, owner["token"], group_id)
 
     assert res.status_code == 429
-    assert res.json()["error"]["code"] == "ASSISTANT_QUOTA_EXCEEDED"
+    assert res.json()["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"
     assert "잠시 후" not in res.json()["error"]["message"]
 
 
@@ -102,7 +102,7 @@ def test_history_is_capped_not_rejected(client, monkeypatch):
     owner, group_id = _setup(client)
     captured = {}
 
-    def fake(ctx, hist, msg):
+    def fake(ctx, hist, msg, **kwargs):
         captured["history"] = hist
         return {"reply": "네", "actions": []}
 
@@ -142,7 +142,7 @@ def test_endpoint_does_not_write_to_db(client, db_session, monkeypatch):
     todo_id = db_session.query(Todo).first().id
     monkeypatch.setattr(
         gemini_service, "answer_assistant",
-        lambda ctx, hist, msg: {
+        lambda ctx, hist, msg, **kw: {
             "reply": "지울까요?",
             "actions": [{"kind": "todo_delete", "todo_id": todo_id}],
         },
@@ -166,7 +166,7 @@ def test_dropped_actions_are_reported_in_reply(client, monkeypatch):
     owner, group_id = _setup(client)
     monkeypatch.setattr(
         gemini_service, "answer_assistant",
-        lambda ctx, hist, msg: {
+        lambda ctx, hist, msg, **kw: {
             "reply": "지우겠습니다.",
             "actions": [{"kind": "todo_delete", "todo_id": 99999}],
         },
@@ -177,3 +177,18 @@ def test_dropped_actions_are_reported_in_reply(client, monkeypatch):
     body = res.json()["data"]
     assert body["actions"] == []
     assert "제외" in body["reply"]
+
+
+def test_예산_소진이면_429와_통일된_코드를_준다(client, monkeypatch):
+    """장부가 비면 Gemini를 부르기 전에 막힌다. answer_assistant를 가짜로
+    바꾸지 않는 것이 요점이다 — 실제로 호출이 안 나가는지 확인한다."""
+    import call_budget
+
+    monkeypatch.setattr(call_budget, "DAILY_TOTAL", 0)
+    monkeypatch.setattr(call_budget, "RESERVE", 0)
+
+    owner, group_id = _setup(client)
+    res = _ask(client, owner["token"], group_id, message="오늘 뭐 해야 해?")
+
+    assert res.status_code == 429
+    assert res.json()["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"

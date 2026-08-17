@@ -2,6 +2,7 @@ import json
 import logging
 import os
 from datetime import date, datetime
+from typing import NoReturn
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+import call_budget
 import commitment_service
 import gemini_service
 from db import Base, engine, get_db
@@ -182,6 +184,43 @@ def _create_todos_from_actions(
     return created
 
 
+def _raise_ai_budget_exhausted() -> NoReturn:
+    """소진 응답은 전 경로가 같아야 한다. 프론트는 message가 아니라 code로
+    분기하므로 경로마다 코드가 다르면 화면이 소진을 한 가지로 다룰 수 없다.
+
+    500이 아니라 429인 이유: 요약·비서·채팅이 같은 무료 티어 할당량을 나눠
+    써서 사용자는 몇 건 만에 이 상태를 만난다. 일반 서버 오류로 보이면 파일이
+    잘못됐다고 생각하고 다른 파일로 계속 재시도한다.
+    """
+    raise HTTPException(
+        status_code=429,
+        detail={
+            "code": "AI_DAILY_BUDGET_EXHAUSTED",
+            "message": "오늘 AI 한도를 다 썼습니다. 내일 다시 이용해주세요.",
+        },
+    )
+
+
+def _classify_or_default(summary_text: str) -> str:
+    """분류 폴백. 예산이 소진돼 있으면 '기타'로 강등한다.
+
+    요청 전체를 429로 끝내지 않는 이유: 여기까지 왔다는 건 요약이 이미 예산을
+    태워 완성됐다는 뜻이다. 분류는 다른 모든 실패에서 이미 '기타'로 떨어지는
+    장식 필드인데(gemini_service.classify_document_category), 소진일 때만
+    요청을 죽이면 사용자는 태운 예산과 다 만든 요약을 함께 잃는다.
+    """
+    try:
+        return gemini_service.classify_document_category(
+            summary_text, claim=call_budget.user_claimer()
+        )
+    except gemini_service.QuotaExceeded:
+        logger.warning(
+            "AI 예산 소진으로 문서 분류를 건너뛴다 — category=기타",
+            extra={"event": "document.classify.budget_exhausted"},
+        )
+        return "기타"
+
+
 async def _summarize_and_store(
     db: Session,
     group_id: int,
@@ -194,28 +233,23 @@ async def _summarize_and_store(
     """요약 → 저장 → (선택) 할 일 등록까지의 공통 흐름."""
 
     try:
-        structured, summary_text = await gemini_service.summarize_upload(file, prompt)
-    except gemini_service.QuotaExceeded:
-        # 500이 아니라 429다. 요약과 비서가 같은 무료 티어 할당량을 나눠 쓰기
-        # 때문에 사용자는 요약 몇 건 만에 이 상태를 만난다. 일반 서버 오류로
-        # 보이면 파일이 잘못됐다고 생각하고 다른 파일로 계속 재시도한다.
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "code": "DOCUMENT_QUOTA_EXCEEDED",
-                "message": "AI 호출 한도를 모두 썼습니다. 사용량이 초기화된 뒤 다시 이용해주세요.",
-            },
+        structured, summary_text = await gemini_service.summarize_upload(
+            file, prompt, claim=call_budget.user_claimer()
         )
+    except gemini_service.QuotaExceeded:
+        _raise_ai_budget_exhausted()
+
+    # 분류는 요약 응답에 함께 온다. classify_document_category는 구조화 파싱이
+    # 실패해 structured가 없을 때만 쓰는 폴백이다 — 그때만 모델을 한 번 더
+    # 부른다. 실측 1,637ms짜리 호출이라 정상 경로에서는 뺐다.
+    category = category or (structured or {}).get("category")
+    if not category:
+        category = _classify_or_default(summary_text)
 
     doc = Document(
         group_id=group_id,
         source_type=source_type,
-        # 분류는 요약 응답에 함께 온다. classify_document_category는 구조화
-        # 파싱이 실패해 structured가 없을 때만 쓰는 폴백이다 — 그때만 모델을
-        # 한 번 더 부른다. 실측 1,637ms짜리 호출이라 정상 경로에서는 뺐다.
-        category=category
-        or (structured or {}).get("category")
-        or gemini_service.classify_document_category(summary_text),
+        category=category,
         filename=file.filename,
         summary=summary_text,
         summary_json=json.dumps(structured, ensure_ascii=False) if structured else None,
@@ -975,12 +1009,14 @@ def _post_bot_message(db: Session, room_id: int, text: str) -> ChatMessage:
     return message
 
 
-def _recent_history(db: Session, room_id: int, limit: int = 20) -> list[dict]:
+def _recent_history(
+    db: Session, room_id: int, limit: int = 20, exclude_id: int | None = None
+) -> list[dict]:
+    query = select(ChatMessage).where(ChatMessage.room_id == room_id)
+    if exclude_id is not None:
+        query = query.where(ChatMessage.id != exclude_id)
     recent = db.scalars(
-        select(ChatMessage)
-        .where(ChatMessage.room_id == room_id)
-        .order_by(ChatMessage.created_at.desc())
-        .limit(limit)
+        query.order_by(ChatMessage.created_at.desc()).limit(limit)
     ).all()
     return [{"sender": m.sender, "content": m.content} for m in reversed(recent)]
 
@@ -1001,13 +1037,15 @@ def _handle_command(
         return _post_bot_message(db, room.id, EXIT_TEXT)
 
     if command == "/요약":
-        summary = gemini_service.summarize_conversation(_recent_history(db, room.id))
+        summary = gemini_service.summarize_conversation(
+            _recent_history(db, room.id), claim=call_budget.user_claimer()
+        )
         return _post_bot_message(db, room.id, summary)
 
     if command == "/문서":
         title = argument or "채팅 회의록"
         structured = gemini_service.draft_document_from_conversation(
-            _recent_history(db, room.id), title
+            _recent_history(db, room.id), title, claim=call_budget.user_claimer()
         )
         if not structured:
             return _post_bot_message(
@@ -1018,7 +1056,10 @@ def _handle_command(
         doc = Document(
             group_id=room.group_id,
             source_type="document",
-            category=gemini_service.classify_document_category(summary_text),
+            # 분류는 초안 응답에 함께 온다(_SUMMARY_SCHEMA에 category가 있다).
+            # 업로드 경로와 같은 폴백 형태다 — 구조화 파싱이 category를 못
+            # 채웠을 때만 모델을 한 번 더 부른다.
+            category=structured.get("category") or _classify_or_default(summary_text),
             filename=title,
             summary=summary_text,
             summary_json=json.dumps(structured, ensure_ascii=False),
@@ -1037,7 +1078,9 @@ def _handle_command(
                 db, room.id, "등록할 내용을 함께 적어주세요. 예: /할일 견적서 8월 12일까지"
             )
         # 날짜 표현을 그대로 살리려고 추출기를 재사용한다. "8월 12일까지" -> 2026-08-12
-        actions = gemini_service.extract_chat_actions(argument)
+        actions = gemini_service.extract_chat_actions(
+            argument, claim=call_budget.user_claimer()
+        )
         created = _create_todos_from_actions(db, room.group_id, actions.get("add_todos", []))
         if not created:
             created = [Todo(group_id=room.group_id, content=argument)]
@@ -1049,7 +1092,9 @@ def _handle_command(
     if command == "/질문":
         if not argument:
             return _post_bot_message(db, room.id, "질문 내용을 함께 적어주세요. 예: /질문 A안과 B안 차이가 뭐야")
-        reply = gemini_service.generate_bot_reply(_recent_history(db, room.id), argument)
+        reply = gemini_service.generate_bot_reply(
+            _recent_history(db, room.id), argument, claim=call_budget.user_claimer()
+        )
         return _post_bot_message(db, room.id, reply)
 
     known = " ".join(CHAT_COMMANDS)
@@ -1077,16 +1122,32 @@ def create_chat_message(
     db.refresh(user_message)
 
     bot_message = None
-    if content.startswith("/"):
-        command, _, argument = content.partition(" ")
-        bot_message = _handle_command(db, room, command.strip(), argument.strip())
-    elif room.ai_mode:
-        # AI가 방에 들어와 있을 때만 대화를 읽는다. 평소엔 Gemini를 호출하지 않는다.
-        actions = gemini_service.extract_chat_actions(content)
-        _apply_extracted_actions(db, group_id, actions)
-        db.commit()
-        reply_text = gemini_service.generate_bot_reply(_recent_history(db, room_id), content)
-        bot_message = _post_bot_message(db, room_id, reply_text)
+    # 명령어 넷(/요약·/문서·/할일·/질문)과 일반 메시지가 모두 예산을 태운다.
+    # 소진을 여기서 안 잡으면 전역 핸들러가 500으로 받아, 이미 저장된 사용자
+    # 메시지 위에 "응답만 실패"가 남고 메시지마다 스택 트레이스가 찍힌다.
+    try:
+        if content.startswith("/"):
+            command, _, argument = content.partition(" ")
+            bot_message = _handle_command(db, room, command.strip(), argument.strip())
+        elif room.ai_mode:
+            # AI가 방에 들어와 있을 때만 대화를 읽는다. 평소엔 Gemini를 호출하지 않는다.
+            # 답변과 액션 추출을 한 번에 받는다 — 나눠 부르면 메시지 하나가
+            # 하루 한도에서 2건을 먹는다.
+            # 방금 저장한 메시지는 [메시지]로 따로 주므로 [지난 대화]에서 뺀다.
+            # 겹쳐 두면 같은 문장이 "새로 뽑을 것"과 "이미 등록된 것"에 동시에 걸린다.
+            turn = gemini_service.chat_reply_with_actions(
+                _recent_history(db, room_id, exclude_id=user_message.id),
+                content,
+                claim=call_budget.user_claimer(),
+            )
+            _apply_extracted_actions(db, group_id, turn)
+            db.commit()
+            # 실패는 이제 안내 문구를 싣고 온다. 빈 문자열은 모델이 정말 빈 답을
+            # 준 경우뿐이고, 그때 빈 말풍선을 남기지 않는다.
+            if turn["reply"]:
+                bot_message = _post_bot_message(db, room_id, turn["reply"])
+    except gemini_service.QuotaExceeded:
+        _raise_ai_budget_exhausted()
 
     todos = db.scalars(
         select(Todo)

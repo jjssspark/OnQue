@@ -164,7 +164,7 @@ def test_extract_chat_commitments_shares_normalize_summary_guard(monkeypatch):
         "generate_content",
         lambda **kwargs: _FakeResponse(json.dumps({"commitments": "약속 없음"})),
     )
-    assert extract_chat_commitments("아무 대화") == []
+    assert extract_chat_commitments("아무 대화", claim=lambda: True) == []
 
 
 def test_extract_chat_commitments_logs_warning_on_failure(monkeypatch, caplog):
@@ -176,7 +176,7 @@ def test_extract_chat_commitments_logs_warning_on_failure(monkeypatch, caplog):
     monkeypatch.setattr(gemini_service.client.models, "generate_content", boom)
 
     with caplog.at_level(logging.WARNING, logger="gemini_service"):
-        result = extract_chat_commitments("아무 대화")
+        result = extract_chat_commitments("아무 대화", claim=lambda: True)
 
     assert result is None
     records = [r for r in caplog.records if r.name == "gemini_service"]
@@ -212,7 +212,7 @@ def test_summary_survives_commitment_failure(client, db_session, monkeypatch):
     headers = {"Authorization": f"Bearer {token}"}
     group = client.post("/api/v1/groups", json={"name": "A팀"}, headers=headers).json()["data"]
 
-    async def fake_summarize(file, prompt):
+    async def fake_summarize(file, prompt, **kwargs):
         return (
             {
                 "headline": "요약됨",
@@ -231,7 +231,7 @@ def test_summary_survives_commitment_failure(client, db_session, monkeypatch):
         raise RuntimeError("DB 폭발")
 
     monkeypatch.setattr(main.gemini_service, "summarize_upload", fake_summarize)
-    monkeypatch.setattr(main.gemini_service, "classify_document_category", lambda t: "기타")
+    monkeypatch.setattr(main.gemini_service, "classify_document_category", lambda t, **kw: "기타")
     monkeypatch.setattr(main.commitment_service, "create_commitments", boom)
 
     res = client.post(

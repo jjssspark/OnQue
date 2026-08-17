@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { SummaryReport } from '@/components/SummaryReport';
 import { AnalyzingOverlay } from '@/components/AnalyzingOverlay';
+import { BudgetNotice } from '@/components/ui/BudgetNotice';
+import { budgetExhaustedText, isBudgetExhausted, isBudgetExhaustedError } from '@/lib/ai-budget';
 import { summarizeCall, summarizeDocument, type SummaryResponse } from '@/lib/api';
 
 type UploadKind = 'call' | 'document';
@@ -37,7 +39,8 @@ export function UploadPanel({
   loadingHint,
   emptySelectionMessage,
 }: UploadPanelProps) {
-  const { currentGroupId, refresh } = useWorkspace();
+  const { currentGroupId, refresh, aiBudget } = useWorkspace();
+  const budgetNoticeId = useId();
   const [file, setFile] = useState<File | null>(null);
   const [autoTodo, setAutoTodo] = useState(false);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
@@ -62,6 +65,11 @@ export function UploadPanel({
   }, [loading]);
 
   const acceptedExtensions = accept.split(',').map((ext) => ext.trim().toLowerCase());
+  const budgetExhausted = isBudgetExhausted(aiBudget);
+  // 소진·미선택은 disabled로 잠그지 않는다. 비활성 버튼은 포커스를 받지 못해
+  // 왜 못 쓰는지 설명한 안내(aria-describedby)에 키보드·스크린리더로 닿을 길이
+  // 사라진다. 상태는 aria-disabled로 알리고, 눌리면 handleUpload가 이유를 말한다.
+  const uploadBlocked = loading || !file || budgetExhausted;
 
   const selectFile = (next: File) => {
     const dot = next.name.lastIndexOf('.');
@@ -76,6 +84,10 @@ export function UploadPanel({
   };
 
   const handleUpload = async () => {
+    if (budgetExhausted) {
+      setErrorMsg(budgetExhaustedText(aiBudget));
+      return;
+    }
     if (!file) {
       setErrorMsg(emptySelectionMessage);
       return;
@@ -91,8 +103,14 @@ export function UploadPanel({
       setSummary(data);
       if (data.created_todos.length > 0) await refresh();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : '요약 처리 중 오류가 발생했습니다.';
-      setErrorMsg(message);
+      if (isBudgetExhaustedError(err)) {
+        // 화면의 잔량은 마지막 조회 시점의 것이라 사전 차단이 새는 경우가 있다.
+        // 서버가 거절한 지금이 진짜 소진 시점이므로 값을 다시 받아 버튼을 잠근다.
+        setErrorMsg(budgetExhaustedText(aiBudget));
+        refresh();
+      } else {
+        setErrorMsg(err instanceof Error ? err.message : '요약 처리 중 오류가 발생했습니다.');
+      }
     } finally {
       setLoading(false);
     }
@@ -199,12 +217,20 @@ export function UploadPanel({
           />
         </label>
 
+        {/* 잔량이 있으면 BudgetNotice가 null이라 이 칸은 비어 있다.
+            empty:hidden이 없으면 안 보이는 여백만 남는다. */}
+        <div className="mt-4 empty:hidden">
+          <BudgetNotice id={budgetNoticeId} />
+        </div>
+
         <button
           type="button"
           onClick={handleUpload}
-          disabled={loading || !file}
+          disabled={loading}
+          aria-disabled={!file || budgetExhausted}
+          aria-describedby={budgetExhausted ? budgetNoticeId : undefined}
           className={`mt-4 w-full rounded-xl py-3 text-sm font-semibold text-brand-foreground transition-all ${
-            loading || !file
+            uploadBlocked
               ? 'cursor-not-allowed bg-foreground/15'
               : 'bg-brand hover:-translate-y-px hover:brightness-110'
           }`}
@@ -212,7 +238,11 @@ export function UploadPanel({
           {loading ? loadingLabel : submitLabel}
         </button>
 
-        {errorMsg && <p className="mt-3 text-sm text-red-500">{errorMsg}</p>}
+        {errorMsg && (
+          <p role="alert" className="mt-3 text-sm text-red-500">
+            {errorMsg}
+          </p>
+        )}
 
         {loading && file && (
           <AnalyzingOverlay

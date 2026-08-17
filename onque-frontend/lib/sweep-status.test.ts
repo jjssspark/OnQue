@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSweepStatus, formatElapsed } from './sweep-status';
+import { buildSweepStatus, formatElapsed, formatResetTime } from './sweep-status';
 import type { SweepMeta } from './api';
 
 const NOW = Date.parse('2026-08-16T12:00:00Z');
@@ -9,8 +9,6 @@ function meta(overrides: Partial<SweepMeta> = {}): SweepMeta {
     last_at: '2026-08-16T11:48:00Z',
     scanned: 34,
     found: 2,
-    budget_used: 3,
-    budget_total: 8,
     ...overrides,
   };
 }
@@ -51,20 +49,21 @@ describe('buildSweepStatus', () => {
   });
 
   it('메타가 없으면 보여줄 줄이 없다', () => {
-    expect(buildSweepStatus(null, NOW)).toEqual({ line: null, exhausted: false });
+    expect(buildSweepStatus(null, NOW)).toEqual({ line: null });
   });
 
   it('개수가 비면 시각만 말한다 — 없는 숫자를 지어내지 않는다', () => {
     expect(buildSweepStatus(meta({ scanned: null, found: null }), NOW).line).toBe('12분 전 확인함');
   });
+});
 
-  it('예산을 다 쓰면 소진으로 표시한다', () => {
-    expect(buildSweepStatus(meta({ budget_used: 8 }), NOW).exhausted).toBe(true);
-    expect(buildSweepStatus(meta({ budget_used: 7 }), NOW).exhausted).toBe(false);
+describe('formatResetTime', () => {
+  it('ISO 문자열을 사람이 읽는 시각으로 바꾼다', () => {
+    // 2026-08-18T00:00:00Z = KST 오전 9시
+    expect(formatResetTime('2026-08-18T00:00:00Z')).toBe('8월 18일 오전 9시');
   });
 
-  it('한 번도 안 훑은 상태에서도 예산 소진은 따로 판정한다', () => {
-    const status = buildSweepStatus(meta({ last_at: null, budget_used: 8 }), NOW);
-    expect(status).toEqual({ line: null, exhausted: true });
+  it('파싱할 수 없으면 null이다 — 엉뚱한 시각을 지어내지 않는다', () => {
+    expect(formatResetTime('언젠가')).toBeNull();
   });
 });

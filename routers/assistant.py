@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 import assistant_service
+import call_budget
 import gemini_service
 from auth import get_current_user
 from db import get_db
@@ -51,7 +52,10 @@ def send_assistant_message(
 
     try:
         answer = gemini_service.answer_assistant(
-            assistant_service.render_context(context), history, body.message
+            assistant_service.render_context(context),
+            history,
+            body.message,
+            claim=call_budget.user_claimer(),
         )
     except gemini_service.QuotaExceeded:
         # 502가 아니라 429다. 일시적 오류가 아니라 사용량이 초기화될 때까지
@@ -60,8 +64,8 @@ def send_assistant_message(
         raise HTTPException(
             status_code=429,
             detail={
-                "code": "ASSISTANT_QUOTA_EXCEEDED",
-                "message": "AI 호출 한도를 모두 썼습니다. 사용량이 초기화된 뒤 다시 이용해주세요.",
+                "code": "AI_DAILY_BUDGET_EXHAUSTED",
+                "message": "오늘 AI 한도를 다 썼습니다. 내일 다시 이용해주세요.",
             },
         )
     if answer is None:
