@@ -433,3 +433,32 @@ def test_예산_소진이면_채팅_경로가_429를_준다(client, monkeypatch,
 
     assert res.status_code == 429
     assert res.json()["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"
+
+
+def test_문서_분류_폴백에서_소진돼도_429다(client, monkeypatch):
+    """업로드 쪽에서 샜던 것과 같은 모양의 '두 번째 호출'이다. 채팅은
+    _handle_command 전체를 감싸 이미 덮여 있다 — 덮여 있음을 고정한다."""
+    auth, _, room_id = _setup(client)
+
+    structured = {
+        "headline": "출시일 확정",
+        "key_points": [],
+        "requests": [],
+        "action_items": [],
+        "notes": "",
+        "commitments": [],
+        "category": "",
+    }
+    monkeypatch.setattr(
+        gemini_service, "draft_document_from_conversation", lambda msgs, title, **kw: structured
+    )
+
+    def boom(text, **kwargs):
+        raise gemini_service.QuotaExceeded()
+
+    monkeypatch.setattr(gemini_service, "classify_document_category", boom)
+
+    res = _post_message(client, auth, room_id, "/문서 회의록")
+
+    assert res.status_code == 429
+    assert res.json()["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"

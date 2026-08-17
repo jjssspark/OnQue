@@ -309,6 +309,32 @@ def test_summarize_endpoint_returns_429_with_its_own_code(client, monkeypatch):
     assert res.json()["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"
 
 
+def test_분류_폴백에서_소진돼도_429다(client, monkeypatch):
+    """구조화 파싱이 실패해 분류 폴백까지 가는 경로다. 방금 요약으로 예산을
+    태운 직후라 여기서 소진될 확률이 가장 높은데, 이 호출은 요약을 감싼
+    try 밖에 있어 500으로 샜다."""
+    token, group_id = _setup_group(client)
+
+    async def plain_only(file, prompt, **kwargs):
+        return None, "평문 요약"
+
+    def boom(text, **kwargs):
+        raise gemini_service.QuotaExceeded()
+
+    monkeypatch.setattr(gemini_service, "summarize_upload", plain_only)
+    monkeypatch.setattr(gemini_service, "classify_document_category", boom)
+
+    res = client.post(
+        "/summarize-document",
+        params={"group_id": group_id},
+        files={"file": ("meeting.txt", b"content", "text/plain")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert res.status_code == 429
+    assert res.json()["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"
+
+
 # ── 수동 할 일 등록 ──────────────────────────────────────────
 
 

@@ -2,6 +2,7 @@ import json
 import logging
 import os
 from datetime import date, datetime
+from typing import NoReturn
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -183,6 +184,23 @@ def _create_todos_from_actions(
     return created
 
 
+def _raise_ai_budget_exhausted() -> NoReturn:
+    """소진 응답은 전 경로가 같아야 한다. 프론트는 message가 아니라 code로
+    분기하므로 경로마다 코드가 다르면 화면이 소진을 한 가지로 다룰 수 없다.
+
+    500이 아니라 429인 이유: 요약·비서·채팅이 같은 무료 티어 할당량을 나눠
+    써서 사용자는 몇 건 만에 이 상태를 만난다. 일반 서버 오류로 보이면 파일이
+    잘못됐다고 생각하고 다른 파일로 계속 재시도한다.
+    """
+    raise HTTPException(
+        status_code=429,
+        detail={
+            "code": "AI_DAILY_BUDGET_EXHAUSTED",
+            "message": "오늘 AI 한도를 다 썼습니다. 내일 다시 이용해주세요.",
+        },
+    )
+
+
 async def _summarize_and_store(
     db: Session,
     group_id: int,
@@ -199,28 +217,27 @@ async def _summarize_and_store(
             file, prompt, claim=call_budget.user_claimer()
         )
     except gemini_service.QuotaExceeded:
-        # 500이 아니라 429다. 요약과 비서가 같은 무료 티어 할당량을 나눠 쓰기
-        # 때문에 사용자는 요약 몇 건 만에 이 상태를 만난다. 일반 서버 오류로
-        # 보이면 파일이 잘못됐다고 생각하고 다른 파일로 계속 재시도한다.
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "code": "AI_DAILY_BUDGET_EXHAUSTED",
-                "message": "오늘 AI 한도를 다 썼습니다. 내일 다시 이용해주세요.",
-            },
-        )
+        _raise_ai_budget_exhausted()
+
+    # 분류는 요약 응답에 함께 온다. classify_document_category는 구조화 파싱이
+    # 실패해 structured가 없을 때만 쓰는 폴백이다 — 그때만 모델을 한 번 더
+    # 부른다. 실측 1,637ms짜리 호출이라 정상 경로에서는 뺐다.
+    category = category or (structured or {}).get("category")
+    if not category:
+        # 이 폴백은 위 요약이 이미 예산을 태운 뒤에 도는 두 번째 호출이라,
+        # 소진을 만날 확률이 오히려 높은 자리다. 좁게만 감싼다 — Document
+        # 생성이나 DB 오류까지 429로 뭉개면 엉뚱한 안내가 나간다.
+        try:
+            category = gemini_service.classify_document_category(
+                summary_text, claim=call_budget.user_claimer()
+            )
+        except gemini_service.QuotaExceeded:
+            _raise_ai_budget_exhausted()
 
     doc = Document(
         group_id=group_id,
         source_type=source_type,
-        # 분류는 요약 응답에 함께 온다. classify_document_category는 구조화
-        # 파싱이 실패해 structured가 없을 때만 쓰는 폴백이다 — 그때만 모델을
-        # 한 번 더 부른다. 실측 1,637ms짜리 호출이라 정상 경로에서는 뺐다.
-        category=category
-        or (structured or {}).get("category")
-        or gemini_service.classify_document_category(
-            summary_text, claim=call_budget.user_claimer()
-        ),
+        category=category,
         filename=file.filename,
         summary=summary_text,
         summary_json=json.dumps(structured, ensure_ascii=False) if structured else None,
@@ -1120,13 +1137,7 @@ def create_chat_message(
             if turn["reply"]:
                 bot_message = _post_bot_message(db, room_id, turn["reply"])
     except gemini_service.QuotaExceeded:
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "code": "AI_DAILY_BUDGET_EXHAUSTED",
-                "message": "오늘 AI 한도를 다 썼습니다. 내일 다시 이용해주세요.",
-            },
-        )
+        _raise_ai_budget_exhausted()
 
     todos = db.scalars(
         select(Todo)
