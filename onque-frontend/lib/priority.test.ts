@@ -13,6 +13,7 @@ function commitment(over: Partial<CommitmentRecord> & { id: number }): Commitmen
     status: 'proposed',
     source_type: 'call',
     source_id: null,
+    room_id: null,
     evidence: '근거',
     is_overdue: false,
     is_due_soon: false,

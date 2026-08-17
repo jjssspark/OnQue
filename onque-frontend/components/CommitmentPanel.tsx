@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 
 import { SkeletonList } from '@/components/ui/Skeleton';
 import {
@@ -195,6 +196,20 @@ export default function CommitmentPanel({ groupId, onChanged }: Props) {
                     </span>
                   </span>
                 </label>
+
+                {/* label 바깥에 둔다. 안에 넣으면 링크를 누를 때 체크박스가
+                    같이 토글돼, 대화를 보러 갔다 오면 선택이 뒤바뀌어 있다.
+                    pl-7은 체크박스(16px) + gap(12px)만큼 본문에 맞춘 들여쓰기다. */}
+                {c.room_id !== null && (
+                  <div className="mt-2 pl-7">
+                    <Link
+                      href={`/chat?room=${c.room_id}`}
+                      className="rounded text-[11px] text-fg-dim underline-offset-2 transition-colors hover:text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                    >
+                      대화 보기
+                    </Link>
+                  </div>
+                )}
               </li>
             ))}
           </ul>

@@ -33,11 +33,11 @@ export type ListMeta = { total: number; limit: number; hasNext: boolean };
 
 export type ErrorDetail = { field: string | null; code: string };
 
-type Envelope<T> = {
+type Envelope<T, M extends ListMeta = ListMeta> = {
   success: boolean;
   data: T;
   error: { code: string; message: string; details?: ErrorDetail[] } | null;
-  meta?: ListMeta;
+  meta?: M;
 };
 
 /** 봉투의 error.code를 살려서 던진다.
@@ -185,11 +185,30 @@ export type CommitmentRecord = {
   status: 'proposed' | 'confirmed' | 'fulfilled' | 'dismissed';
   source_type: 'call' | 'document' | 'chat';
   source_id: number | null;
+  /** 채팅에서 뽑힌 약속의 출처 방. 다른 출처면 null. */
+  room_id: number | null;
   evidence: string;
   is_overdue: boolean;
   is_due_soon: boolean;
   created_at: string;
 };
+
+/** 백그라운드 스윕이 직전에 무엇을 했는지.
+ *
+ * 스윕은 조용히 돌아서, 사용자 입장에서는 약속이 어느 날 그냥 생겨 있다.
+ * 이 값들이 있어야 "언제, 무엇을 보고 만든 건지"를 화면에서 말해줄 수 있다.
+ *
+ * 아직 한 번도 대화를 훑지 않았으면 앞 세 값이 모두 null이다. 0이 아닌 이유는
+ * "훑었는데 못 찾음"과 "아직 훑은 적 없음"이 다른 상태이기 때문이다. */
+export type SweepMeta = {
+  last_at: string | null;
+  scanned: number | null;
+  found: number | null;
+  budget_used: number;
+  budget_total: number;
+};
+
+export type CommitmentListMeta = ListMeta & { sweep: SweepMeta };
 
 export type AssistantActionKind =
   | 'todo_add'
@@ -262,11 +281,11 @@ async function requestEnveloped<T>(path: string, options?: RequestInit): Promise
 /** requestEnveloped와 같은 언랩이지만 목록 조회의 meta(전체 개수 등)도 함께 돌려준다.
  * 화면에 온 개수와 서버가 가진 전체 개수가 다를 수 있는 목록(예: 약속 확인 필요 큐)에서
  * 조용한 잘림을 막으려면 meta가 필요하다. */
-async function requestEnvelopedWithMeta<T>(
+async function requestEnvelopedWithMeta<T, M extends ListMeta = ListMeta>(
   path: string,
   options?: RequestInit,
-): Promise<{ data: T; meta: ListMeta | null }> {
-  const envelope = await request<Envelope<T>>(path, options);
+): Promise<{ data: T; meta: M | null }> {
+  const envelope = await request<Envelope<T, M>>(path, options);
   return { data: envelope.data, meta: envelope.meta ?? null };
 }
 
@@ -529,11 +548,13 @@ export function getCommitmentsPage(
   groupId: number,
   status?: CommitmentRecord['status'],
   limit?: number,
-): Promise<{ data: CommitmentRecord[]; meta: ListMeta | null }> {
+): Promise<{ data: CommitmentRecord[]; meta: CommitmentListMeta | null }> {
   const params = new URLSearchParams({ group_id: String(groupId) });
   if (status) params.set('status', status);
   if (limit) params.set('limit', String(limit));
-  return requestEnvelopedWithMeta<CommitmentRecord[]>(`/api/v1/commitments?${params}`);
+  return requestEnvelopedWithMeta<CommitmentRecord[], CommitmentListMeta>(
+    `/api/v1/commitments?${params}`,
+  );
 }
 
 export function getClients(groupId: number): Promise<Client[]> {

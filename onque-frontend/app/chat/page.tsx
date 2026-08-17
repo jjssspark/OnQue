@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ChatWindow } from '@/components/ChatWindow';
 import { useWorkspace } from '@/components/WorkspaceContext';
 import { PageShell } from '@/components/PageShell';
@@ -36,8 +37,21 @@ const CHAT_DESCRIPTION = (
   </>
 );
 
+/** useSearchParams는 정적 렌더링되는 페이지에서 Suspense 없이 쓰면 프로덕션
+ * 빌드가 실패한다(next/dist/docs .../use-search-params.md). 경계를 여기 둔다. */
 export default function ChatPage() {
+  return (
+    <Suspense fallback={null}>
+      <ChatPageContent />
+    </Suspense>
+  );
+}
+
+function ChatPageContent() {
   const { currentGroupId } = useWorkspace();
+  const searchParams = useSearchParams();
+  // 약속 카드의 "대화 보기"가 붙여 보내는 값. 숫자가 아니면 없는 것으로 친다.
+  const requestedRoomId = Number(searchParams.get('room')) || null;
   const [rooms, setRooms] = useState<ChatRoomRecord[]>([]);
   const [openRoom, setOpenRoom] = useState<ChatRoomRecord | null>(null);
   const [newRoomName, setNewRoomName] = useState('');
@@ -65,6 +79,24 @@ export default function ChatPage() {
     setLoading(true);
     load(currentGroupId);
   }, [currentGroupId, load]);
+
+  // 링크로 들어왔으면 그 방을 열어준다. 한 번만 소비하는 이유: 창을 닫으면
+  // openRoom이 null이 되는데, 파라미터에 계속 반응하면 곧바로 다시 열려서
+  // 닫을 수 없는 창이 된다.
+  const roomOpenedFromLinkRef = useRef(false);
+  useEffect(() => {
+    if (roomOpenedFromLinkRef.current) return;
+    if (requestedRoomId === null || currentGroupId === null || loading) return;
+
+    roomOpenedFromLinkRef.current = true;
+    const target = rooms.find((r) => r.id === requestedRoomId);
+    if (target) {
+      setOpenRoom(target);
+      return;
+    }
+    // 조용히 목록만 보여주면 링크가 고장 난 것처럼 보인다. 왜 못 여는지 말한다.
+    setErrorMsg('그 대화방을 열 수 없습니다. 삭제됐거나 초대받지 않은 방입니다.');
+  }, [requestedRoomId, currentGroupId, loading, rooms]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();

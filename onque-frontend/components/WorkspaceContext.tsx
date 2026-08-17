@@ -12,6 +12,7 @@ import {
   type ScheduleItem,
   type Todo,
   type CommitmentRecord,
+  type SweepMeta,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthContext';
 
@@ -39,6 +40,11 @@ type WorkspaceContextValue = {
   proposedCount: number;
   dueSoon: CommitmentRecord[];
   lastSyncedAt: number | null;
+  /** 백그라운드 스윕이 직전에 무엇을 했는지. 응답에 없으면 null.
+   *
+   * 대시보드가 자체 조회로 받을 수도 있지만 그쪽은 그룹 전환 때만 도는지라
+   * "12분 전"이 오래 멈춰 있게 된다. 30초마다 도는 이 조회에 얹는다. */
+  sweep: SweepMeta | null;
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -53,6 +59,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [proposedCount, setProposedCount] = useState(0);
   const [dueSoon, setDueSoon] = useState<CommitmentRecord[]>([]);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+  const [sweep, setSweep] = useState<SweepMeta | null>(null);
   // 뒤늦게 도착한 이전 요청의 응답이 최신 화면을 덮지 못하게 하는 세대 번호.
   const requestSeqRef = useRef(0);
   const inFlightRef = useRef(false);
@@ -85,6 +92,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setSchedules([]);
       setProposedCount(0);
       setDueSoon([]);
+      setSweep(null);
       setError(null);
       setLastSyncedAt(null);
       setLoading(false);
@@ -103,6 +111,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setTodos(nextTodos);
       setSchedules(nextSchedules);
       setProposedCount(proposed.meta?.total ?? proposed.data.length);
+      setSweep(proposed.meta?.sweep ?? null);
       setDueSoon(
         confirmed
           .filter((c) => c.is_overdue || c.is_due_soon)
@@ -192,6 +201,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         proposedCount,
         dueSoon,
         lastSyncedAt,
+        sweep,
       }}
     >
       {children}
