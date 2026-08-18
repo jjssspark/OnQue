@@ -1,6 +1,5 @@
 # 우측 패널 AI 비서 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 우측 상시 패널에 내 업무 데이터를 아는 1:1 AI 비서를 넣는다. 물어보면 답하고, 시키면 제안하며, 위험한 변경은 승인을 받는다.
 

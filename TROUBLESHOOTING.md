@@ -1966,7 +1966,7 @@ _ALLOWED_TRANSITIONS = {
 ### 참고
 
 - `commitment_service.py` — `can_transition`, `_ALLOWED_TRANSITIONS`, `apply_status`
-- `docs/superpowers/specs/2026-08-06-autonomous-commitment-tracking-design.md` — 상태 전이 다이어그램과 승인 게이트
+- `docs/specs/2026-08-06-autonomous-commitment-tracking-design.md` — 상태 전이 다이어그램과 승인 게이트
 - 관련: TS-020 (같은 태스크에서 나온 테스트 픽스처 함정)
 
 ---

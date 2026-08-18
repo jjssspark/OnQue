@@ -1,6 +1,5 @@
 # 그룹별 권한·계정 (A묶음) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 역할을 `User` 전역 속성에서 `GroupMembership` 소속 속성으로 옮겨, 한 사람이 팀마다 다른 역할을 갖게 한다.
 
@@ -8,7 +7,7 @@
 
 **Tech Stack:** FastAPI, SQLAlchemy 2.0 (`Mapped[T]` + `mapped_column`), pytest, Next.js App Router, Neon Postgres (운영) / SQLite in-memory (테스트)
 
-**스펙:** `docs/superpowers/specs/2026-08-06-group-scoped-roles-design.md`
+**스펙:** `docs/specs/2026-08-06-group-scoped-roles-design.md`
 
 ## Global Constraints
 

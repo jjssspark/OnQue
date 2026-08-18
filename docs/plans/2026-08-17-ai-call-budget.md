@@ -1,6 +1,5 @@
 # AI 호출 예산 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Gemini 무료 티어 하루 20건을 스윕·요약·비서·채팅이 나눠 쓰게 하고, 중복 호출을 없애 사용자 몫의 유효 용량을 두 배로 늘린다.
 
@@ -8,7 +7,7 @@
 
 **Tech Stack:** Python 3 / FastAPI / SQLAlchemy 2.x / Postgres(Neon, 테스트는 SQLite 인메모리) / pytest — 프론트는 Next.js 16 / React 19 / vitest
 
-**Spec:** `docs/superpowers/specs/2026-08-17-ai-call-budget-design.md`
+**Spec:** `docs/specs/2026-08-17-ai-call-budget-design.md`
 
 ## Global Constraints
 
