@@ -25,6 +25,15 @@ const TONE: Record<NonNullable<Props['tone']>, string> = {
   late: 'border-l-2 border-l-late bg-late-wash',
 };
 
+// interactive hover는 level별로 다르다. card/raised는 이미 밝기 램프
+// 위쪽이라 배경을 더 밝힐 여지가 없다 — sunken만 배경을 밝히고,
+// card는 테두리를, raised는 그림자를 hover 신호로 쓴다.
+const HOVER: Record<NonNullable<Props['level']>, string> = {
+  card: 'hover:border-rule-strong focus-within:border-rule-strong',
+  sunken: 'hover:bg-card-2 focus-within:bg-card-2',
+  raised: 'hover:shadow-md hover:shadow-navy/20 focus-within:shadow-md focus-within:shadow-navy/20',
+};
+
 export function Surface({
   level = 'card',
   interactive = false,
@@ -33,7 +42,7 @@ export function Surface({
   children,
 }: Props) {
   const motion = interactive
-    ? 'transition-[transform,background-color] duration-300 ease-[cubic-bezier(.16,1,.3,1)] hover:-translate-y-[3px] hover:bg-card-2 focus-within:-translate-y-[3px] focus-within:bg-card-2'
+    ? `transition-[transform,background-color,border-color,box-shadow] duration-300 ease-[cubic-bezier(.16,1,.3,1)] hover:-translate-y-[3px] focus-within:-translate-y-[3px] ${HOVER[level]}`
     : '';
 
   return (
