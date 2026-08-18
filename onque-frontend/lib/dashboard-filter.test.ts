@@ -34,6 +34,17 @@ describe('matchesFilter', () => {
     expect(matchesFilter(makeItem({ dueDate: null }), 'overdue', TODAY)).toBe(false);
   });
 
+  it('지남은 daysPastDue만 보고 dueDate로 다시 계산하지 않는다', () => {
+    // 지났는지는 buildPriorityStream 한 곳에서만 결정한다. dueDate와
+    // daysPastDue가 일부러 어긋나는 이 행은 실무에서 나올 리 없는 값이
+    // 아니라, matchesFilter가 그 결정을 믿지 않고 dueDate에서 다시
+    // 계산하기 시작하면 바로 드러나는 경우를 잡아내기 위한 것이다.
+    expect(
+      matchesFilter(makeItem({ dueDate: '2026-08-17', daysPastDue: null }), 'overdue', TODAY),
+    ).toBe(false);
+    expect(matchesFilter(makeItem({ dueDate: null, daysPastDue: 3 }), 'overdue', TODAY)).toBe(true);
+  });
+
   it('오늘은 기한이 오늘인 것만 고른다', () => {
     expect(matchesFilter(makeItem({ dueDate: TODAY }), 'today', TODAY)).toBe(true);
     expect(matchesFilter(makeItem({ dueDate: '2026-08-19' }), 'today', TODAY)).toBe(false);
