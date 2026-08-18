@@ -1,6 +1,5 @@
 # 초대 수락 절차 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 초대받은 사람이 **수락해야** 팀에 들어가게 만들어, 이메일 열거 오라클과 무동의 편입을 함께 닫는다.
 
@@ -8,7 +7,7 @@
 
 **Tech Stack:** FastAPI, SQLAlchemy 2.0 (`Mapped[T]` + `mapped_column`), pytest, Next.js App Router, Neon Postgres (운영) / SQLite in-memory (테스트)
 
-**스펙:** `docs/superpowers/specs/2026-08-07-invitation-acceptance-design.md`
+**스펙:** `docs/specs/2026-08-07-invitation-acceptance-design.md`
 
 ## Global Constraints
 

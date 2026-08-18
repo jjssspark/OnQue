@@ -1,6 +1,5 @@
 # 그룹/워크스페이스 구조 + 최소 인증 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** OnQue를 로그인 없는 단일 전역 워크스페이스에서, 이메일/비밀번호 로그인 + 부서별 그룹으로 데이터가 분리되는 워크스페이스로 바꾼다.
 
@@ -14,7 +13,7 @@
 - 인증 토큰은 `Authorization: Bearer <token>` 헤더로만 받는다. 쿼리 파라미터로 받지 않는다.
 - 에러 코드는 `{도메인}_{대상}_{사유}` SCREAMING_SNAKE_CASE.
 - 비밀값(`JWT_SECRET` 등)은 `.env`에만 두고 `.env.example`에 더미값으로 문서화한다.
-- 이번 스펙 범위는 그룹/인증 구조까지다. 채팅 UI 리디자인, 에이전틱 자동화, 대행업체 특화 업무 모델은 다음 스펙에서 다룬다 (설계 문서 `docs/superpowers/specs/2026-08-05-group-workspace-auth-design.md` 참고).
+- 이번 스펙 범위는 그룹/인증 구조까지다. 채팅 UI 리디자인, 에이전틱 자동화, 대행업체 특화 업무 모델은 다음 스펙에서 다룬다 (설계 문서 `docs/specs/2026-08-05-group-workspace-auth-design.md` 참고).
 - JWT는 프론트 `localStorage`에 저장한다 — `react/security.md`는 세션을 `localStorage`에 두지 말라고 하지만(XSS 노출), 이 프로젝트는 사내 단일 회사용 데모/포트폴리오 범위라 httpOnly 쿠키 + 별도 프록시 구성의 복잡도를 지금 들이지 않기로 결정했다. 실제 운영 전환 시 httpOnly 쿠키로 바꿀 것.
 
 ---

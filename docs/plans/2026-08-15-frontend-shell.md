@@ -1,6 +1,5 @@
 # 프론트엔드 셸 개편 구현 계획
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 내비게이션·페이지 컨테이너·로딩 표현을 공통 구조로 통합해, 여러 화면이 같은 반응형·접근성 결함을 반복하지 않게 한다.
 
@@ -8,7 +7,7 @@
 
 **Tech Stack:** Next.js 16.3 (App Router), React 19, Tailwind CSS 4, TypeScript 5, vitest 3.2
 
-**설계 문서:** `docs/superpowers/specs/2026-08-15-frontend-shell-design.md`
+**설계 문서:** `docs/specs/2026-08-15-frontend-shell-design.md`
 
 ## Global Constraints
 

@@ -1,6 +1,5 @@
 # UI 방향 재설정 구현 계획
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 어두운 Next.js 스타터 기본값을 벗고 푸른 라이트 기조로 갈아입히면서, 대시보드를 지표 카드형에서 목록·상세 두 단 처리형으로 바꾼다.
 
@@ -8,7 +7,7 @@
 
 **Tech Stack:** Next.js 16 (App Router), React 19, Tailwind v4 (`@theme inline`), TypeScript, vitest, next/font/google
 
-**Spec:** `docs/superpowers/specs/2026-08-18-ui-direction-design.md`
+**Spec:** `docs/specs/2026-08-18-ui-direction-design.md`
 
 ## Global Constraints
 
@@ -1445,7 +1444,7 @@ git commit -m "fix: 반응형·대비·키보드 확인에서 나온 문제 정�
 Step 2에서 토큰 값을 조정했거나, Task 9에서 안 바꾸고 남긴 것이 있으면 스펙 문서에 적는다. 계획과 실제가 어긋난 채로 두지 않는다.
 
 ```bash
-git add docs/superpowers/specs/2026-08-18-ui-direction-design.md
+git add docs/specs/2026-08-18-ui-direction-design.md
 git commit -m "docs: UI 개편 실제 결과를 스펙에 반영"
 ```
 

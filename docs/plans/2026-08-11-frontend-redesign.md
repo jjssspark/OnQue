@@ -1,6 +1,5 @@
 # OnQue 프론트엔드 개편 (R1) 구현 계획
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 대시보드의 시각 위계를 밝기 3단·상태색·가로 요약 열로 다시 세우고, 그 규칙을 토큰과 공용 컴포넌트로 고정한다.
 
@@ -10,7 +9,7 @@
 
 ## Global Constraints
 
-- 설계 근거는 `docs/superpowers/specs/2026-08-11-frontend-redesign-design.md`. 충돌하면 스펙이 우선한다.
+- 설계 근거는 `docs/specs/2026-08-11-frontend-redesign-design.md`. 충돌하면 스펙이 우선한다.
 - **백엔드를 건드리지 않는다.** API 응답 스키마 변경 금지. "며칠 지났는지"는 프론트에서 계산한다.
 - **다크 단일 테마.** 라이트 테마를 추가하지 않는다.
 - **이모지를 UI에 쓰지 않는다.** 아이콘은 기존 SVG path를 유지한다.

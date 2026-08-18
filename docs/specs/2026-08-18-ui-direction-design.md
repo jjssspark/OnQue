@@ -167,7 +167,7 @@ Geist를 걷어내고 IBM Plex로 간다.
 8에서 19 사이 구간에서는 자동 정리가 하루 종일 멈춰 있어도 화면이 20/20에서만
 소진을 알린다. 눈금으로 그리면 그 상태가 그대로 보인다.
 
-이 항목은 `docs/superpowers/ai-call-budget-followups.md`의 UX 항목에 적혀 있던 것이다.
+이 항목은 `docs/ai-call-budget-followups.md`의 UX 항목에 적혀 있던 것이다.
 
 ### 지표 라벨
 

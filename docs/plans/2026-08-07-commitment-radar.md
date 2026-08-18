@@ -1,6 +1,5 @@
 # 약속 레이더와 실시간 대시보드 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 우측 패널의 "실시간"을 참으로 만들고(30초 폴링), 모든 화면에 떠 있는 그 패널에 약속 요약을 읽기 전용으로 노출한다.
 
@@ -8,7 +7,7 @@
 
 **Tech Stack:** Next.js App Router, TypeScript, Tailwind, React Context
 
-**스펙:** `docs/superpowers/specs/2026-08-07-commitment-radar-design.md`
+**스펙:** `docs/specs/2026-08-07-commitment-radar-design.md`
 
 ## Global Constraints
 

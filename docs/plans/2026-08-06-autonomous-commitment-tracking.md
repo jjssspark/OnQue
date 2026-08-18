@@ -1,6 +1,5 @@
 # 자율 약속 추적 (Commitment Tracking) 구현 플랜
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 클라이언트에게 한 약속을 통화·문서·채팅에서 자동 추출해 제안 상태로 쌓고, 사람이 일괄 확인하면 기한을 추적한다.
 
@@ -8,7 +7,7 @@
 
 **Tech Stack:** FastAPI, SQLAlchemy 2.0 (`Mapped`/`mapped_column`), Pydantic v2, pytest + TestClient (SQLite in-memory), google-genai (`gemini-2.5-flash`), Next.js App Router + Tailwind
 
-**설계 문서:** `docs/superpowers/specs/2026-08-06-autonomous-commitment-tracking-design.md`
+**설계 문서:** `docs/specs/2026-08-06-autonomous-commitment-tracking-design.md`
 
 ## Global Constraints
 
