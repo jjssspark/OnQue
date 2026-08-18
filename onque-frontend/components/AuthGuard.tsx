@@ -16,19 +16,19 @@ const MIN_SPLASH_MS = 800;
 
 function SplashScreen() {
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-sidebar">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-navy">
       <div
-        className="pointer-events-none absolute left-1/2 top-1/2 h-[420px] w-[420px] rounded-full bg-brand/25 blur-[120px] [animation:splash-glow_2.4s_ease-in-out_infinite]"
+        className="pointer-events-none absolute left-1/2 top-1/2 h-[420px] w-[420px] rounded-full bg-blue/25 blur-[120px] [animation:splash-glow_2.4s_ease-in-out_infinite]"
         aria-hidden
       />
       <div className="relative flex flex-col items-center gap-5 [animation:splash-in_0.5s_ease-out]">
-        <p className="text-3xl font-bold text-white">
-          On<span className="text-brand">Que</span>
+        <p className="text-3xl font-bold text-card-2">
+          On<span className="text-blue">Que</span>
         </p>
         <div className="flex gap-1.5">
-          <span className="h-2 w-2 animate-bounce rounded-full bg-brand [animation-delay:-0.3s]" />
-          <span className="h-2 w-2 animate-bounce rounded-full bg-brand [animation-delay:-0.15s]" />
-          <span className="h-2 w-2 animate-bounce rounded-full bg-brand" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-blue [animation-delay:-0.3s]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-blue [animation-delay:-0.15s]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-blue" />
         </div>
       </div>
     </div>

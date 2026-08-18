@@ -33,9 +33,9 @@ export default function SignupPage() {
       title="회원가입"
       subtitle="새 계정을 만들고 워크스페이스를 시작하세요."
       footer={
-        <p className="text-xs text-sidebar-foreground/60">
+        <p className="text-xs text-paper/60">
           이미 계정이 있으신가요?{' '}
-          <Link href="/login" className="font-semibold text-brand">
+          <Link href="/login" className="font-semibold text-blue">
             로그인
           </Link>
         </p>
@@ -48,7 +48,7 @@ export default function SignupPage() {
           placeholder="이름"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-sidebar-foreground/40 focus:border-brand focus:outline-none"
+          className="w-full rounded-lg border border-paper/10 bg-paper/5 px-3 py-2.5 text-sm text-card-2 placeholder:text-paper/60 focus:border-blue focus:outline-none"
         />
         <input
           type="email"
@@ -56,7 +56,7 @@ export default function SignupPage() {
           placeholder="이메일"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-sidebar-foreground/40 focus:border-brand focus:outline-none"
+          className="w-full rounded-lg border border-paper/10 bg-paper/5 px-3 py-2.5 text-sm text-card-2 placeholder:text-paper/60 focus:border-blue focus:outline-none"
         />
         <input
           type="password"
@@ -65,18 +65,18 @@ export default function SignupPage() {
           placeholder="비밀번호 (8자 이상)"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-sidebar-foreground/40 focus:border-brand focus:outline-none"
+          className="w-full rounded-lg border border-paper/10 bg-paper/5 px-3 py-2.5 text-sm text-card-2 placeholder:text-paper/60 focus:border-blue focus:outline-none"
         />
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error && <p className="text-xs text-late">{error}</p>}
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded-lg bg-brand py-2.5 text-sm font-semibold text-brand-foreground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full rounded-lg bg-blue py-2.5 text-sm font-semibold text-card-2 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? '가입 중...' : '가입하기'}
         </button>
         {showSlowHint && (
-          <p className="text-center text-xs leading-relaxed text-sidebar-foreground/50">
+          <p className="text-center text-xs leading-relaxed text-paper/60">
             서버를 깨우는 중입니다. 처음 접속은 1분까지 걸릴 수 있습니다.
           </p>
         )}

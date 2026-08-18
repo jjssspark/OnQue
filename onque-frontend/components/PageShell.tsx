@@ -15,7 +15,7 @@ type Props = {
   title: string;
   /**
    * string이 아니라 ReactNode다. /chat의 설명문에 <span className="font-mono
-   * text-brand">/help</span> 가 들어 있어 문자열로는 담기지 않는다.
+   * text-blue">/help</span> 가 들어 있어 문자열로는 담기지 않는다.
    */
   description?: ReactNode;
   width?: Width;
@@ -40,9 +40,9 @@ export function PageShell({
     >
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-mono text-xs uppercase tracking-widest text-brand">{eyebrow}</p>
-          <h1 className="mt-1 text-2xl font-bold text-foreground">{title}</h1>
-          {description && <p className="mt-2 text-sm text-foreground/60">{description}</p>}
+          <p className="font-mono text-xs uppercase tracking-widest text-blue">{eyebrow}</p>
+          <h1 className="mt-1 text-2xl font-bold text-ink">{title}</h1>
+          {description && <p className="mt-2 text-sm text-ink-2">{description}</p>}
         </div>
         {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
       </div>

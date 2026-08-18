@@ -20,10 +20,10 @@ export function MobileNav() {
   const accountOpen = openedOn === pathname;
 
   return (
-    <div className="md:hidden sticky top-0 z-10 bg-sidebar text-sidebar-foreground">
-      <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
-        <h1 className="text-lg font-bold text-white">
-          On<span className="text-brand">Que</span>
+    <div className="md:hidden sticky top-0 z-10 bg-navy text-paper">
+      <div className="flex items-center justify-between gap-3 border-b border-paper/10 px-4 py-3">
+        <h1 className="text-lg font-bold text-card-2">
+          On<span className="text-blue">Que</span>
         </h1>
 
         <button
@@ -31,7 +31,7 @@ export function MobileNav() {
           onClick={() => setOpenedOn(accountOpen ? null : pathname)}
           aria-expanded={accountOpen}
           aria-controls="mobile-account-menu"
-          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold text-sidebar-foreground/80 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold text-paper/80 transition-colors hover:bg-paper/10 hover:text-card-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue"
         >
           <svg
             viewBox="0 0 24 24"
@@ -60,18 +60,18 @@ export function MobileNav() {
       <div
         id="mobile-account-menu"
         hidden={!accountOpen}
-        className="gap-2 border-b border-white/10 px-4 py-2.5 [&:not([hidden])]:flex [animation:fade-in_0.15s_ease-out]"
+        className="gap-2 border-b border-paper/10 px-4 py-2.5 [&:not([hidden])]:flex [animation:fade-in_0.15s_ease-out]"
       >
         <Link
           href="/profile"
-          className="rounded-md bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/20"
+          className="rounded-md bg-paper/10 px-3 py-1.5 text-xs font-semibold text-card-2 transition-colors hover:bg-paper/20"
         >
           내 프로필
         </Link>
         <button
           type="button"
           onClick={logout}
-          className="rounded-md px-3 py-1.5 text-xs font-semibold text-sidebar-foreground/70 transition-colors hover:bg-white/5 hover:text-white"
+          className="rounded-md px-3 py-1.5 text-xs font-semibold text-paper/70 transition-colors hover:bg-paper/5 hover:text-card-2"
         >
           로그아웃
         </button>
@@ -84,8 +84,8 @@ export function MobileNav() {
             href={item.href}
             className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
               isNavItemActive(item.href, pathname)
-                ? 'bg-white/10 text-white'
-                : 'text-sidebar-foreground/70 hover:bg-white/5 hover:text-white'
+                ? 'bg-paper/10 text-card-2'
+                : 'text-paper/70 hover:bg-paper/5 hover:text-card-2'
             }`}
           >
             {item.shortLabel}

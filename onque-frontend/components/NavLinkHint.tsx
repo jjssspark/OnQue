@@ -16,7 +16,7 @@ export function NavLinkHint() {
   return (
     <span
       aria-hidden
-      className={`link-hint ml-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-brand ${
+      className={`link-hint ml-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-blue ${
         pending ? 'is-pending' : ''
       }`}
     />
