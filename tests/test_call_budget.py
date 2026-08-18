@@ -6,7 +6,10 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from google.genai import errors as genai_errors
+
 import call_budget
+import gemini_service
 from models import CallBudget
 
 
@@ -265,3 +268,107 @@ def test_거절된_선점은_성공으로_남지_않는다(client, db_session, m
         assert call_budget.claim(db_session, "user") is False
 
     assert not [r for r in caplog.records if getattr(r, "event", "") == "ai_budget.claim.granted"]
+
+
+# ── 실제 429와 장부 맞추기 ──────────────────────────────────
+
+
+def _daily_quota_error():
+    """운영에서 실제로 받은 429 본문이다 (2026-08-18 실측).
+
+    `quotaId`가 하루 한도임을 못박는다 — 분당 한도와 갈라내는 유일한 근거다.
+    """
+    return genai_errors.ClientError(
+        429,
+        {
+            "error": {
+                "code": 429,
+                "status": "RESOURCE_EXHAUSTED",
+                "message": "You exceeded your current quota",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                        "violations": [
+                            {
+                                "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+                                "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+                                "quotaValue": "20",
+                            }
+                        ],
+                    }
+                ],
+            }
+        },
+    )
+
+
+def _per_minute_quota_error():
+    return genai_errors.ClientError(
+        429,
+        {
+            "error": {
+                "code": 429,
+                "status": "RESOURCE_EXHAUSTED",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                        "violations": [
+                            {"quotaId": "GenerateRequestsPerMinutePerProjectPerModel-FreeTier"}
+                        ],
+                    }
+                ],
+            }
+        },
+    )
+
+
+def test_실제_하루_한도_429를_받으면_장부를_상한까지_올린다(client, db_session, monkeypatch):
+    """장부가 실제보다 낮으면 선제 차단이 무력해진다 — 남았다고 보고 매 요청이
+    실 API를 두드려 429를 받아온다. 호출을 아끼자는 게 이 장부의 존재 이유다."""
+    monkeypatch.setattr(call_budget, "DAILY_TOTAL", 20)
+    monkeypatch.setattr(call_budget, "RESERVE", 12)
+    _set_used(db_session, 3)
+
+    with pytest.raises(gemini_service.QuotaExceeded):
+        gemini_service._reraise_if_quota(_daily_quota_error(), "chat.turn.quota_exceeded")
+
+    assert call_budget.used_today(db_session) == 20
+    assert call_budget.claim(db_session, "user") is False
+
+
+def test_분당_한도_429는_장부를_건드리지_않는다(client, db_session, monkeypatch):
+    """분당 한도는 몇 초 뒤 풀린다. 이걸 하루 소진으로 적으면 리셋까지
+    아무도 못 쓴다 — 잘못된 안내보다 훨씬 비싼 대가다."""
+    monkeypatch.setattr(call_budget, "DAILY_TOTAL", 20)
+    monkeypatch.setattr(call_budget, "RESERVE", 12)
+    _set_used(db_session, 3)
+
+    with pytest.raises(gemini_service.QuotaExceeded):
+        gemini_service._reraise_if_quota(_per_minute_quota_error(), "chat.turn.quota_exceeded")
+
+    assert call_budget.used_today(db_session) == 3
+
+
+def test_이유를_알_수_없는_429는_장부를_건드리지_않는다(client, db_session, monkeypatch):
+    """본문을 못 읽었을 때 하루를 잠그면, 파싱 실패 하나가 서비스를 하루 세운다."""
+    monkeypatch.setattr(call_budget, "DAILY_TOTAL", 20)
+    monkeypatch.setattr(call_budget, "RESERVE", 12)
+    _set_used(db_session, 3)
+
+    with pytest.raises(gemini_service.QuotaExceeded):
+        gemini_service._reraise_if_quota(
+            genai_errors.ClientError(429, {"error": {"code": 429}}), "chat.turn.quota_exceeded"
+        )
+
+    assert call_budget.used_today(db_session) == 3
+
+
+def test_오늘_장부가_없어도_소진을_적는다(client, db_session, monkeypatch):
+    """하루의 첫 호출이 곧바로 429일 수 있다 — 어제 자정 이후 다른 경로가
+    한도를 다 썼을 때. 그때 적을 행이 없다고 넘어가면 보정이 통째로 빠진다."""
+    monkeypatch.setattr(call_budget, "DAILY_TOTAL", 20)
+    monkeypatch.setattr(call_budget, "RESERVE", 12)
+
+    call_budget.mark_exhausted()
+
+    assert call_budget.used_today(db_session) == 20

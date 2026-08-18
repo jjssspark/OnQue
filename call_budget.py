@@ -159,6 +159,44 @@ def claim(db: Session, consumer: str) -> bool:
         return False
 
 
+def mark_exhausted() -> None:
+    """실제 429를 받았을 때 장부를 오늘 상한까지 끌어올린다.
+
+    장부가 실제 소비보다 낮으면 선제 차단이 무력해진다. 남았다고 보고 매 요청이
+    Gemini를 두드려 429를 받아오므로, 호출을 아끼려고 만든 장부가 정작 아껴야
+    하는 상태에서 아무것도 아끼지 않는다.
+
+    장부는 우리 호출만 세지만 실제 할당량은 프로젝트 단위다 — 다른 경로(개발
+    스크립트, 다른 배포본)가 같은 키를 쓰면 두 숫자는 어긋난다. 그 어긋남을
+    바로잡을 수 있는 유일한 순간이 Gemini가 소진을 알려주는 이 시점이다.
+
+    자기 세션을 여는 이유는 _claimer와 같다 — 요청 트랜잭션의 성패를 따라가면
+    안 된다. 이미 소진된 사실은 요청이 실패해도 남아야 한다.
+    """
+    session = Session(bind=db_module.engine)
+    try:
+        today = _today()
+        bumped = session.execute(
+            update(CallBudget)
+            .where(CallBudget.day == today, CallBudget.calls < DAILY_TOTAL)
+            .values(calls=DAILY_TOTAL)
+            .execution_options(synchronize_session=False)
+        )
+        if bumped.rowcount == 0 and session.execute(
+            select(CallBudget.day).where(CallBudget.day == today)
+        ).scalar_one_or_none() is None:
+            # 하루의 첫 호출이 곧바로 429일 수 있다. 적을 행이 없다고 넘어가면
+            # 보정이 통째로 빠진다.
+            session.execute(insert(CallBudget).values(day=today, calls=DAILY_TOTAL))
+        session.commit()
+        logger.warning(
+            "실제 한도 소진을 장부에 반영 total=%d", DAILY_TOTAL,
+            extra={"event": "ai_budget.exhausted.synced", "total": DAILY_TOTAL},
+        )
+    finally:
+        session.close()
+
+
 def _claimer(consumer: str) -> Callable[[], bool]:
     """부르면 자기 세션을 열어 1건 선점하고 닫는 호출 가능 객체.
 

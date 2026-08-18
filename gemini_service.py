@@ -15,6 +15,7 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
 
+import call_budget
 from constants import MAX_ACTIONS
 from models import DOCUMENT_CATEGORIES
 
@@ -356,6 +357,25 @@ class QuotaExceeded(Exception):
     """
 
 
+def _is_daily_quota(exc: genai_errors.ClientError) -> bool:
+    """이 429가 하루 한도(RPD)인지. 분당 한도면 False.
+
+    둘을 뭉뚱그리면 안 된다. 분당 한도는 몇 초 뒤 풀리는데 이걸 하루 소진으로
+    적으면 리셋까지 아무도 못 쓴다 — 순간 스파이크 하나가 서비스를 하루 세운다.
+    갈라내는 근거는 응답 본문의 quotaId뿐이다.
+
+    본문을 못 읽으면 False다. 확신 없이 하루를 잠그는 쪽이 훨씬 비싸다.
+    """
+    details = getattr(exc, "details", None)
+    if not isinstance(details, dict):
+        return False
+    for detail in (details.get("error") or {}).get("details") or []:
+        for violation in (detail or {}).get("violations") or []:
+            if "PerDay" in ((violation or {}).get("quotaId") or ""):
+                return True
+    return False
+
+
 def _reraise_if_quota(exc: Exception, event: str) -> None:
     """429면 QuotaExceeded로 바꿔 올리고, 아니면 아무것도 하지 않는다.
 
@@ -366,6 +386,10 @@ def _reraise_if_quota(exc: Exception, event: str) -> None:
     요청마다 찍혀 로그가 트레이스로 뒤덮인다.
     """
     if isinstance(exc, genai_errors.ClientError) and exc.code == 429:
+        if _is_daily_quota(exc):
+            # 장부가 실제보다 낮게 남아 있으면 선제 차단이 무력해진다. 여기가
+            # 그 어긋남을 바로잡을 수 있는 유일한 지점이다.
+            call_budget.mark_exhausted()
         logger.warning("Gemini 호출 한도 소진", extra={"event": event})
         raise QuotaExceeded from exc
 
