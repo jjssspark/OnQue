@@ -275,3 +275,42 @@ def test_호출부가_전부_claim을_넘긴다():
     assert covered == set(GEMINI_CALLERS), (
         f"호출부를 못 찾은 함수: {sorted(set(GEMINI_CALLERS) - covered)}"
     )
+
+
+def test_소진_응답은_경로가_달라도_같은_본문이다(client, monkeypatch):
+    """비서 라우터가 main을 import하면 순환이라 같은 응답을 손으로 한 번 더
+    써뒀다. 한쪽만 고치면 프론트의 code 분기가 경로에 따라 갈린다."""
+    token = client.post(
+        "/api/v1/auth/signup",
+        json={"email": "dup@onque.dev", "password": "password123", "name": "관리자"},
+    ).json()["data"]["token"]
+    auth = {"Authorization": f"Bearer {token}"}
+    group_id = client.post("/api/v1/groups", json={"name": "A팀"}, headers=auth).json()["data"]["id"]
+    room_id = client.get("/chat/rooms", params={"group_id": group_id}, headers=auth).json()[0]["id"]
+    client.post(
+        "/chat/messages",
+        params={"room_id": room_id},
+        json={"sender": "관리자", "content": "/help"},
+        headers=auth,
+    )
+
+    def exhausted(*args, **kwargs):
+        raise gemini_service.QuotaExceeded()
+
+    monkeypatch.setattr(gemini_service, "chat_reply_with_actions", exhausted)
+    monkeypatch.setattr(gemini_service, "answer_assistant", exhausted)
+
+    chat = client.post(
+        "/chat/messages",
+        params={"room_id": room_id},
+        json={"sender": "관리자", "content": "견적서 언제 보내나요"},
+        headers=auth,
+    )
+    assistant = client.post(
+        "/api/v1/assistant/messages",
+        json={"group_id": group_id, "message": "오늘 할 일 뭐야", "history": []},
+        headers=auth,
+    )
+
+    assert chat.status_code == assistant.status_code == 429
+    assert chat.json()["error"] == assistant.json()["error"]

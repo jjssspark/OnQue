@@ -542,3 +542,85 @@ def test_실제_소진_뒤_다음_메시지는_Gemini를_부르지_않는다(cli
     assert second["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"
 
     assert len(calls) == 1, "소진을 알고도 두 번째 메시지가 실 API를 또 태웠다"
+
+
+def test_배열_안쪽_null도_걸러낸다(monkeypatch):
+    """배열 자체가 null인 건 이미 막았지만 원소 하나가 null인 건 안 막혔다.
+    _hint_matches의 .strip()과 item.get()이 그대로 터져 ai_mode 메시지마다
+    500이 된다 — 모델이 한 번 어긋나면 방이 통째로 멎는다."""
+    monkeypatch.setattr(
+        gemini_service.client.models,
+        "generate_content",
+        lambda **kw: _turn_response(
+            add_todos=[{"content": "견적서", "due_date": "2026-08-20"}, None],
+            complete_todo_hints=["견적서", None],
+            add_schedules=[None],
+            delete_schedule_hints=[None, ""],
+        ),
+    )
+
+    result = gemini_service.chat_reply_with_actions([], "아무 말", claim=lambda: True)
+
+    assert result["add_todos"] == [{"content": "견적서", "due_date": "2026-08-20"}]
+    assert result["complete_todo_hints"] == ["견적서"]
+    assert result["add_schedules"] == []
+    assert result["delete_schedule_hints"] == []
+
+
+def test_null이_섞여_와도_방이_멎지_않는다(client, monkeypatch):
+    """단위로 걸러도 라우트가 실제로 그 결과를 쓰는지는 별개다.
+    이 저장소는 그 간극에서 두 번 당했다(TS-035, TS-036)."""
+    auth, _, room_id = _setup(client)
+    _say(client, auth, room_id, "/help")
+
+    monkeypatch.setattr(
+        gemini_service.client.models,
+        "generate_content",
+        lambda **kw: _turn_response(complete_todo_hints=[None], add_todos=[None]),
+    )
+
+    res = client.post(
+        "/chat/messages",
+        params={"room_id": room_id},
+        json={"sender": "관리자", "content": "견적서 다 보냈어요"},
+        headers=auth,
+    )
+
+    assert res.status_code == 200
+
+
+def test_extract_chat_actions도_null_배열을_빈_리스트로_지킨다(monkeypatch):
+    """/할일 명령이 쓰는 경로다. 병합 경로에만 필터를 넣어 여기가 비었다 —
+    같은 모델이 같은 형태로 어긋나는데 한쪽만 막혀 있다."""
+    import json
+
+    class _Res:
+        text = json.dumps({"add_todos": None, "complete_todo_hints": ["견적서", None]})
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", lambda **kw: _Res())
+
+    result = gemini_service.extract_chat_actions("견적서 보냈어요", claim=lambda: True)
+
+    assert result["add_todos"] == []
+    assert result["complete_todo_hints"] == ["견적서"]
+
+
+def test_같은_초에_쌓인_메시지도_순서가_유지된다(client, db_session):
+    """정렬 키가 created_at 하나뿐이라 같은 초로 묶이면 순서가 DB가 정하는
+    대로 흔들린다. 프롬프트의 [지난 대화]가 뒤섞이면 모델이 "누가 먼저 말했나"를
+    잘못 읽는데, 실패가 조용해서 테스트도 사람도 못 잡는다."""
+    import main
+    from datetime import datetime
+    from models import ChatMessage
+
+    _setup(client)
+    same_moment = datetime(2026, 8, 18, 10, 0, 0)
+    for text in ["첫째", "둘째", "셋째", "넷째"]:
+        db_session.add(
+            ChatMessage(room_id=1, sender="관리자", content=text, created_at=same_moment)
+        )
+    db_session.commit()
+
+    history = main._recent_history(db_session, 1, limit=3)
+
+    assert [m["content"] for m in history] == ["둘째", "셋째", "넷째"]

@@ -36,9 +36,8 @@
   분당 한도·본문 파싱 실패는 건드리지 않는다. 경위는 TS-038
 - **`summarize_upload`가 첫 선점 뒤 임시파일 저장에 실패하면** 모델 호출은 안 나갔는데
   1건이 낭비된다. 빈도가 낮고 환불이 선차감 원칙과 충돌해 수용했다
-- **`commitment_service`가 `DAILY_TOTAL - RESERVE`로 `_ceiling("sweep")`을 복제한다.**
-  배분 규칙이 바뀌면 이 로그만 조용히 어긋난다. `call_budget`에 공개 `ceiling(consumer)`를
-  두는 편이 낫다
+- ~~**`commitment_service`가 `DAILY_TOTAL - RESERVE`를 복제한다.**~~ **2026-08-18 해결** —
+  `call_budget.ceiling(consumer)`를 공개하고 호출부가 그걸 쓴다
 
 ## 관측성
 
@@ -65,17 +64,17 @@
 
 - `main.py`가 1100줄 넘음 — 800줄 규약 초과
 - eslint 에러 5건 (`SmartDashboardPanel.tsx` 4, `useSlowRequestHint.ts` 1)
-- 시각 표기 혼재 — `ai_budget.resets_at`은 `Z`, `sweep.last_at`은 `+00:00`.
-  `api-contract.md` 규약은 `Z`이므로 어긋난 쪽은 `last_at`이다. `Date.parse`가 둘 다
-  받아 동작에는 문제없다
-- `extract_chat_actions`에 배열 null 필터가 없음 (병합 경로에만 넣었다)
-- 배열 **안쪽** null(`["견적서", null]`)은 여전히 500 — `_hint_matches`의 `.strip()`
-- `_recent_history`의 정렬이 SQLite에서 불안정 — `created_at`이 같은 초로 묶인다.
-  `ChatMessage.id.desc()` 타이브레이크가 필요하고, **그때까지 프롬프트 순서 회귀를
-  테스트가 못 잡는다**
-- `routers/assistant.py`의 429 생성이 중복 — `main` import가 순환이라 인라인으로 남음
-- `models.py`의 "Gemini 한도는 API 키 하나에 걸리므로" 주석이 부정확 —
-  실제로는 **프로젝트** 단위다 (전역 장부라는 결론 자체는 유효)
+- ~~시각 표기 혼재 — `sweep.last_at`이 `+00:00`~~ **2026-08-18 해결** — `_utc_iso`가
+  `Z`로 낸다. 한 봉투 안의 두 표기가 통일됐다
+- ~~`extract_chat_actions`에 배열 null 필터가 없음~~ **2026-08-18 해결** — 두 경로가
+  같은 `_clean_actions`를 지난다
+- ~~배열 **안쪽** null(`["견적서", null]`)은 여전히 500~~ **2026-08-18 해결** —
+  `_clean_actions`가 원소 단위로 거른다
+- ~~`_recent_history`의 정렬이 SQLite에서 불안정~~ **2026-08-18 해결** —
+  `ChatMessage.id.desc()` 타이브레이크 추가, 같은 초 메시지 순서를 테스트로 고정
+- ~~`routers/assistant.py`의 429 생성이 중복~~ **2026-08-18 해결** — `ai_errors.py`로
+  빼서 양쪽이 같은 함수를 쓴다. 두 경로 응답이 같은지 테스트로 고정
+- ~~`models.py`의 "API 키 하나에 걸리므로" 주석이 부정확~~ **2026-08-18 정정**
 
 ## UX
 

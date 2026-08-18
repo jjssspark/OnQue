@@ -576,6 +576,32 @@ _EMPTY_EXTRACTION = {
     "delete_schedule_hints": [],
 }
 
+# 항목이 객체인 배열과 문자열인 배열. 걸러내는 기준이 달라 나눠 둔다.
+_OBJECT_ACTION_KEYS = ("add_todos", "add_schedules")
+_HINT_ACTION_KEYS = ("complete_todo_hints", "delete_todo_hints", "delete_schedule_hints")
+
+
+def _clean_actions(data: dict) -> dict:
+    """모델이 준 액션 배열을 호출부가 그대로 돌 수 있는 형태로 만든다.
+
+    배열 자체가 null인 것뿐 아니라 원소 하나가 null인 경우까지 막는다.
+    걸러내지 않으면 _apply_extracted_actions의 item.get()과 _hint_matches의
+    .strip()이 그대로 터지고, ai_mode 방은 메시지마다 500이 된다 — 모델이 한 번
+    어긋나면 방이 통째로 멎는다.
+
+    두 추출 경로가 같은 정리기를 지나게 한다. 한쪽에만 넣으면 같은 모델이 같은
+    형태로 어긋나는데 한쪽만 막힌 상태가 된다(TS-035와 같은 모양).
+    """
+    cleaned = dict(_EMPTY_EXTRACTION)
+    for key in _OBJECT_ACTION_KEYS:
+        cleaned[key] = [item for item in (data.get(key) or []) if isinstance(item, dict)]
+    for key in _HINT_ACTION_KEYS:
+        cleaned[key] = [
+            hint for hint in (data.get(key) or []) if isinstance(hint, str) and hint.strip()
+        ]
+    return cleaned
+
+
 _EXTRACTION_SCHEMA = {
     "type": "OBJECT",
     "required": [
@@ -646,7 +672,7 @@ def extract_chat_actions(message: str, *, claim: Callable[[], bool]) -> dict:
             ),
         )
         data = json.loads(response.text)
-        return {**_EMPTY_EXTRACTION, **data}
+        return _clean_actions(data)
     except Exception:
         return dict(_EMPTY_EXTRACTION)
 
@@ -727,10 +753,7 @@ def chat_reply_with_actions(
             ),
         )
         data = json.loads(response.text)
-        # null이 온 자리는 empty의 빈 배열이 남게 한다. 그대로 덮으면
-        # _apply_extracted_actions의 for가 None을 돌며 TypeError로 터진다.
-        given = {key: value for key, value in data.items() if value is not None}
-        return {**empty, **given, "reply": (data.get("reply") or "").strip()}
+        return {**_clean_actions(data), "reply": (data.get("reply") or "").strip()}
     except Exception as exc:
         _reraise_if_quota(exc, "chat.turn.quota_exceeded")
         logger.warning("채팅 턴 처리 실패", extra={"event": "chat.turn.failed"})

@@ -372,3 +372,16 @@ def test_오늘_장부가_없어도_소진을_적는다(client, db_session, monk
     call_budget.mark_exhausted()
 
     assert call_budget.used_today(db_session) == 20
+
+
+def test_소비자_상한은_한_곳에서만_정해진다(monkeypatch):
+    """상한 계산을 호출부가 복제하면 배분 규칙이 바뀔 때 그 복제본만 조용히
+    어긋난다. 로그·화면이 실제와 다른 숫자를 말하는데 아무도 안 터진다."""
+    monkeypatch.setattr(call_budget, "DAILY_TOTAL", 30)
+    monkeypatch.setattr(call_budget, "RESERVE", 18)
+
+    assert call_budget.ceiling("user") == 30
+    assert call_budget.ceiling("sweep") == 12
+
+    with pytest.raises(ValueError):
+        call_budget.ceiling("모르는소비자")

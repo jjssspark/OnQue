@@ -152,7 +152,8 @@ def _utc_iso(value: datetime | None) -> str | None:
     if value is None:
         return None
     aware = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    return aware.astimezone(timezone.utc).isoformat()
+    # api-contract의 UTC 표기는 "Z"다. isoformat()은 "+00:00"을 낸다.
+    return aware.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _sweep_meta(db: Session, group_id: int) -> dict:
@@ -189,13 +190,10 @@ def _ai_budget_meta(db: Session) -> dict:
     이 조회에 얹는 이유: 프론트가 30초마다 이 엔드포인트를 부르고 있어
     별도 폴링을 만들 필요가 없다.
     """
-    # api-contract의 ISO 8601 UTC 표기는 "Z"다. isoformat()은 "+00:00"을 내므로
-    # 여기서 바꾼다. sweep.last_at은 이미 나가 있는 형식이라 건드리지 않는다.
-    resets_at = _utc_iso(call_budget.resets_at()).replace("+00:00", "Z")
     return {
         "used": call_budget.used_today(db),
         "total": call_budget.DAILY_TOTAL,
-        "resets_at": resets_at,
+        "resets_at": _utc_iso(call_budget.resets_at()),
     }
 
 

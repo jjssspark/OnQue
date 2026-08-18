@@ -2,7 +2,6 @@ import json
 import logging
 import os
 from datetime import date, datetime
-from typing import NoReturn
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +11,7 @@ from sqlalchemy.orm import Session
 
 import call_budget
 import commitment_service
+import ai_errors
 import gemini_service
 from db import Base, engine, get_db
 from routers.auth import router as auth_router
@@ -184,23 +184,6 @@ def _create_todos_from_actions(
     return created
 
 
-def _raise_ai_budget_exhausted() -> NoReturn:
-    """소진 응답은 전 경로가 같아야 한다. 프론트는 message가 아니라 code로
-    분기하므로 경로마다 코드가 다르면 화면이 소진을 한 가지로 다룰 수 없다.
-
-    500이 아니라 429인 이유: 요약·비서·채팅이 같은 무료 티어 할당량을 나눠
-    써서 사용자는 몇 건 만에 이 상태를 만난다. 일반 서버 오류로 보이면 파일이
-    잘못됐다고 생각하고 다른 파일로 계속 재시도한다.
-    """
-    raise HTTPException(
-        status_code=429,
-        detail={
-            "code": "AI_DAILY_BUDGET_EXHAUSTED",
-            "message": "오늘 AI 한도를 다 썼습니다. 내일 다시 이용해주세요.",
-        },
-    )
-
-
 def _classify_or_default(summary_text: str) -> str:
     """분류 폴백. 예산이 소진돼 있으면 '기타'로 강등한다.
 
@@ -237,7 +220,7 @@ async def _summarize_and_store(
             file, prompt, claim=call_budget.user_claimer()
         )
     except gemini_service.QuotaExceeded:
-        _raise_ai_budget_exhausted()
+        ai_errors.raise_ai_budget_exhausted()
 
     # 분류는 요약 응답에 함께 온다. classify_document_category는 구조화 파싱이
     # 실패해 structured가 없을 때만 쓰는 폴백이다 — 그때만 모델을 한 번 더
@@ -1015,8 +998,10 @@ def _recent_history(
     query = select(ChatMessage).where(ChatMessage.room_id == room_id)
     if exclude_id is not None:
         query = query.where(ChatMessage.id != exclude_id)
+    # id로 타이브레이크한다. created_at 하나로만 정렬하면 같은 초에 쌓인
+    # 메시지들의 순서를 DB가 정하고, 프롬프트의 [지난 대화]가 뒤섞인다.
     recent = db.scalars(
-        query.order_by(ChatMessage.created_at.desc()).limit(limit)
+        query.order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc()).limit(limit)
     ).all()
     return [{"sender": m.sender, "content": m.content} for m in reversed(recent)]
 
@@ -1147,7 +1132,7 @@ def create_chat_message(
             if turn["reply"]:
                 bot_message = _post_bot_message(db, room_id, turn["reply"])
     except gemini_service.QuotaExceeded:
-        _raise_ai_budget_exhausted()
+        ai_errors.raise_ai_budget_exhausted()
 
     todos = db.scalars(
         select(Todo)
