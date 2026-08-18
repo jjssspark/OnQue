@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 import assistant_service
 import call_budget
+import ai_errors
 import gemini_service
 from auth import get_current_user
 from db import get_db
@@ -58,16 +59,7 @@ def send_assistant_message(
             claim=call_budget.user_claimer(),
         )
     except gemini_service.QuotaExceeded:
-        # 502가 아니라 429다. 일시적 오류가 아니라 사용량이 초기화될 때까지
-        # 계속 실패하는 상태라, "잠시 후 다시"로 안내하면 사용자가 재시도를
-        # 반복하다 앱이 고장난 줄 안다.
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "code": "AI_DAILY_BUDGET_EXHAUSTED",
-                "message": "오늘 AI 한도를 다 썼습니다. 내일 다시 이용해주세요.",
-            },
-        )
+        ai_errors.raise_ai_budget_exhausted()
     if answer is None:
         raise HTTPException(
             status_code=502,

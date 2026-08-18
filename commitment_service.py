@@ -312,7 +312,7 @@ def maybe_sweep(db: Session, group_id: int) -> int:
                     extra={
                         "event": "commitment.sweep.budget_exhausted",
                         "group_id": group_id,
-                        "budget": call_budget.DAILY_TOTAL - call_budget.RESERVE,
+                        "budget": call_budget.ceiling("sweep"),
                     },
                 )
                 break

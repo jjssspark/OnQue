@@ -115,7 +115,9 @@ def test_list_meta_reports_last_sweep_result(client, db_session):
 
     res = client.get("/api/v1/commitments", params={"group_id": group_a}, headers=headers)
     sweep = res.json()["meta"]["sweep"]
-    assert sweep["last_at"] == swept_at.isoformat()
+    # api-contract의 ISO 8601 UTC 표기는 "Z"다. 같은 응답의 ai_budget.resets_at은
+    # 이미 Z로 나가고 있어, 한 봉투 안에서 두 표기가 섞여 있었다.
+    assert sweep["last_at"] == "2026-08-16T03:00:00Z"
     assert sweep["scanned"] == 34
     assert sweep["found"] == 2
 

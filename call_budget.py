@@ -41,8 +41,13 @@ RESET_TZ = ZoneInfo(os.getenv("AI_BUDGET_RESET_TZ", "America/Los_Angeles"))
 _CONSUMERS = ("user", "sweep")
 
 
-def _ceiling(consumer: str) -> int:
-    """이 소비자가 넘을 수 없는 누적 호출 수."""
+def ceiling(consumer: str) -> int:
+    """이 소비자가 넘을 수 없는 누적 호출 수.
+
+    공개해 두는 이유: 호출부가 DAILY_TOTAL - RESERVE를 직접 계산하면 배분
+    규칙을 바꿀 때 그 복제본만 조용히 어긋난다. 로그와 화면이 실제와 다른
+    숫자를 말하는데 아무것도 안 터진다.
+    """
     if consumer not in _CONSUMERS:
         # 조용히 통과시키면 예산 밖에서 호출이 나간다.
         raise ValueError(f"알 수 없는 소비자: {consumer}")
@@ -119,14 +124,14 @@ def claim(db: Session, consumer: str) -> bool:
     깎였는데 장부만 복구되면, 실패하는 경로 하나가 남은 예산을 전부 태우며
     재시도를 반복한다.
     """
-    ceiling = _ceiling(consumer)
-    if ceiling < 1:
+    limit = ceiling(consumer)
+    if limit < 1:
         return False
 
     today = _today()
     bumped = db.execute(
         update(CallBudget)
-        .where(CallBudget.day == today, CallBudget.calls < ceiling)
+        .where(CallBudget.day == today, CallBudget.calls < limit)
         .values(calls=CallBudget.calls + 1)
         .execution_options(synchronize_session=False)
     )
@@ -149,7 +154,7 @@ def claim(db: Session, consumer: str) -> bool:
         # 다른 요청이 먼저 오늘 행을 만들었다. 그 행 위에서 다시 겨룬다.
         retried = db.execute(
             update(CallBudget)
-            .where(CallBudget.day == today, CallBudget.calls < ceiling)
+            .where(CallBudget.day == today, CallBudget.calls < limit)
             .values(calls=CallBudget.calls + 1)
             .execution_options(synchronize_session=False)
         )
