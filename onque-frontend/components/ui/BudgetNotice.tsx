@@ -28,11 +28,11 @@ export function BudgetNotice({ id, hint }: BudgetNoticeProps) {
     <div
       id={id}
       role="status"
-      className="rounded-xl border border-hairline bg-surface-sunken px-4 py-3 text-xs leading-relaxed text-fg-muted"
+      className="rounded-md border border-rule bg-soon-wash px-4 py-3 text-xs leading-relaxed text-ink-2"
     >
       <p>{budgetExhaustedText(aiBudget)}</p>
       {/* 줄을 나눠 "언제 풀리는지"와 "지금 뭘 할 수 있는지"가 각각 눈에 들어오게 한다. */}
-      {hint && <p className="mt-1.5 text-foreground/70">{hint}</p>}
+      {hint && <p className="mt-1.5 text-ink">{hint}</p>}
     </div>
   );
 }

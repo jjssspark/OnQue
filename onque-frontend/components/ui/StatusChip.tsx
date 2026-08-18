@@ -1,14 +1,15 @@
 import type { ReactNode } from 'react';
 
 type Props = {
-  tone: 'late' | 'soon' | 'neutral';
+  tone: 'late' | 'soon' | 'neutral' | 'unconfirmed';
   children: ReactNode;
 };
 
 const TONE = {
-  late: 'bg-late-bg text-late-fg',
-  soon: 'bg-soon-bg text-soon-fg',
-  neutral: 'bg-white/[0.07] text-fg-dim',
+  late: 'bg-late-wash text-late',
+  soon: 'bg-soon-wash text-soon',
+  neutral: 'bg-paper text-ink-2',
+  unconfirmed: 'bg-blue-wash text-blue-deep',
 } as const;
 
 /**

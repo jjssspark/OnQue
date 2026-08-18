@@ -10,7 +10,7 @@ type SkeletonProps = {
  * 처리하지 않는다.
  */
 export function Skeleton({ className = '' }: SkeletonProps) {
-  return <div aria-hidden className={`animate-pulse rounded bg-foreground/[0.07] ${className}`} />;
+  return <div aria-hidden className={`animate-pulse rounded bg-rule ${className}`} />;
 }
 
 type SkeletonListProps = {

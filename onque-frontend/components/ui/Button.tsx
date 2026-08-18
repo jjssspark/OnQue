@@ -1,13 +1,14 @@
 import type { ButtonHTMLAttributes } from 'react';
 
 type Props = {
-  variant?: 'primary' | 'ghost';
+  variant?: 'primary' | 'ghost' | 'danger';
   size?: 'sm' | 'md';
 } & ButtonHTMLAttributes<HTMLButtonElement>;
 
 const VARIANT = {
-  primary: 'bg-brand text-brand-foreground hover:brightness-110',
-  ghost: 'bg-white/10 text-fg-muted hover:bg-white/[0.16]',
+  primary: 'bg-blue text-card-2 hover:bg-blue-deep active:bg-blue-deep',
+  ghost: 'bg-transparent text-ink-2 hover:bg-blue-wash hover:text-blue-deep',
+  danger: 'bg-late-wash text-late hover:bg-late hover:text-card-2',
 } as const;
 
 const SIZE = {
@@ -16,7 +17,7 @@ const SIZE = {
 } as const;
 
 type ButtonClassesOptions = {
-  variant?: 'primary' | 'ghost';
+  variant?: 'primary' | 'ghost' | 'danger';
   size?: 'sm' | 'md';
   className?: string;
 };
@@ -27,7 +28,6 @@ type ButtonClassesOptions = {
 // transition 목록의 filter는 허용 목록(transform/opacity/background-color)
 // 밖이지만 의도적으로 남긴다. filter는 GPU 합성이라 리플로우가 없다 —
 // 제약이 막으려는 해악(레이아웃 스래싱)이 애초에 발생하지 않는다.
-// hover:brightness-110의 부드러운 밝기 변화는 이것 없이는 즉시 튄다.
 export function buttonClasses({
   variant = 'primary',
   size = 'md',
@@ -35,7 +35,8 @@ export function buttonClasses({
 }: ButtonClassesOptions = {}): string {
   // focus-visible 링은 필수다. 기존 코드에는 포커스 표시가 아예 없어
   // 키보드 사용자가 지금 어디에 있는지 알 수 없었다.
-  return `inline-flex items-center rounded-lg font-bold transition-[transform,filter,background-color] duration-150 active:scale-[.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 ${VARIANT[variant]} ${SIZE[size]} ${className}`;
+  // 링 오프셋 바탕이 어두운 배경에서 종이색으로 바뀐다.
+  return `inline-flex items-center rounded-md font-bold transition-[transform,filter,background-color] duration-150 active:scale-[.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:pointer-events-none disabled:opacity-50 ${VARIANT[variant]} ${SIZE[size]} ${className}`;
 }
 
 export function Button({
