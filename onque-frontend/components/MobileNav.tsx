@@ -31,7 +31,7 @@ export function MobileNav() {
           onClick={() => setOpenedOn(accountOpen ? null : pathname)}
           aria-expanded={accountOpen}
           aria-controls="mobile-account-menu"
-          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold text-paper/80 transition-colors hover:bg-paper/10 hover:text-card-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue"
+          className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold text-paper/80 transition-colors hover:bg-paper/10 hover:text-card-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-wash"
         >
           <svg
             viewBox="0 0 24 24"

@@ -26,9 +26,9 @@ function SplashScreen() {
           On<span className="text-blue-wash">Que</span>
         </p>
         <div className="flex gap-1.5">
-          <span className="h-2 w-2 animate-bounce rounded-full bg-blue [animation-delay:-0.3s]" />
-          <span className="h-2 w-2 animate-bounce rounded-full bg-blue [animation-delay:-0.15s]" />
-          <span className="h-2 w-2 animate-bounce rounded-full bg-blue" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-blue-wash [animation-delay:-0.3s]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-blue-wash [animation-delay:-0.15s]" />
+          <span className="h-2 w-2 animate-bounce rounded-full bg-blue-wash" />
         </div>
       </div>
     </div>

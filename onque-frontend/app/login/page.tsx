@@ -47,7 +47,7 @@ export default function LoginPage() {
           placeholder="이메일"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-lg border border-paper/10 bg-paper/5 px-3 py-2.5 text-sm text-card-2 placeholder:text-paper/60 focus:border-blue focus:outline-none"
+          className="w-full rounded-lg border border-paper/10 bg-paper/5 px-3 py-2.5 text-sm text-card-2 placeholder:text-paper/70 focus:border-blue-wash focus:outline-none"
         />
         <input
           type="password"
@@ -55,7 +55,7 @@ export default function LoginPage() {
           placeholder="비밀번호"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-lg border border-paper/10 bg-paper/5 px-3 py-2.5 text-sm text-card-2 placeholder:text-paper/60 focus:border-blue focus:outline-none"
+          className="w-full rounded-lg border border-paper/10 bg-paper/5 px-3 py-2.5 text-sm text-card-2 placeholder:text-paper/70 focus:border-blue-wash focus:outline-none"
         />
         {error && <p className="text-xs text-late-wash">{error}</p>}
         <button

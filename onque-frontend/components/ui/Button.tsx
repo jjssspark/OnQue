@@ -33,6 +33,15 @@ const RING_OFFSET = {
   navy: 'focus-visible:ring-offset-navy',
 } as const;
 
+// ring-blue는 남색 위에서 1.88:1로 보이지 않는다. 남색 면에서만 링 색도
+// blue-wash로 같이 바꾼다 (남색 위 11.51:1) — 나머지 세 면은 그대로 blue.
+const RING_COLOR = {
+  paper: 'focus-visible:ring-blue',
+  card: 'focus-visible:ring-blue',
+  'card-2': 'focus-visible:ring-blue',
+  navy: 'focus-visible:ring-blue-wash',
+} as const;
+
 // 다음 태스크의 약속 카드는 <a> 안에 <button>을 넣지 않고 <Link>에 이
 // 클래스를 직접 입힌다. 그래서 클래스 문자열을 함수로 빼 export 한다.
 //
@@ -47,8 +56,8 @@ export function buttonClasses({
 }: ButtonClassesOptions = {}): string {
   // focus-visible 링은 필수다. 기존 코드에는 포커스 표시가 아예 없어
   // 키보드 사용자가 지금 어디에 있는지 알 수 없었다.
-  // 링 오프셋 색은 버튼이 놓인 면(onSurface)에 맞춘다.
-  return `inline-flex items-center rounded-md font-bold transition-[transform,filter,background-color] duration-150 active:scale-[.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue focus-visible:ring-offset-2 ${RING_OFFSET[onSurface]} disabled:pointer-events-none disabled:opacity-50 ${VARIANT[variant]} ${SIZE[size]} ${className}`;
+  // 링 색과 오프셋 색 둘 다 버튼이 놓인 면(onSurface)에 맞춘다.
+  return `inline-flex items-center rounded-md font-bold transition-[transform,filter,background-color] duration-150 active:scale-[.96] focus-visible:outline-none focus-visible:ring-2 ${RING_COLOR[onSurface]} focus-visible:ring-offset-2 ${RING_OFFSET[onSurface]} disabled:pointer-events-none disabled:opacity-50 ${VARIANT[variant]} ${SIZE[size]} ${className}`;
 }
 
 export function Button({

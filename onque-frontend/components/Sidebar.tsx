@@ -72,7 +72,7 @@ export function Sidebar() {
               </svg>
               <span className="flex flex-1 flex-col">
                 <span className="text-sm font-semibold">{item.label}</span>
-                <span className="text-[11px] text-paper/60">
+                <span className="text-[11px] text-paper/70">
                   {item.description}
                 </span>
               </span>
