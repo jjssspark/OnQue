@@ -4,14 +4,16 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import { useWorkspace } from '@/components/WorkspaceContext';
-import { type Metric } from '@/lib/metrics';
 import CommitmentPanel from '@/components/CommitmentPanel';
 import ClientPanel from '@/components/ClientPanel';
 import { ReceivedInvitations } from '@/components/ReceivedInvitations';
 import { PriorityStream } from '@/components/dashboard/PriorityStream';
-import { SummaryColumn } from '@/components/dashboard/SummaryColumn';
+import { FilterBar } from '@/components/dashboard/FilterBar';
+import { DetailPanel } from '@/components/dashboard/DetailPanel';
+import { Surface } from '@/components/ui/Surface';
 import { PageShell } from '@/components/PageShell';
 import { buildPriorityStream } from '@/lib/priority';
+import { applyFilter, countByFilter, type FilterKey } from '@/lib/dashboard-filter';
 import {
   getCommitmentsPage,
   getDocuments,
@@ -27,6 +29,14 @@ const MODULES = [
 ];
 
 const UPCOMING_WINDOW_DAYS = 7;
+
+const ZERO_COUNTS: Record<FilterKey, number> = {
+  all: 0,
+  overdue: 0,
+  today: 0,
+  week: 0,
+  unconfirmed: 0,
+};
 
 // CommitmentPanel.tsx의 MAX_LIMIT과 같은 이유. 서버 기본 limit(20)에 걸리면
 // 스트림이 실제보다 적어 보이는데, 아무 표시도 없이 그렇게 된다.
@@ -67,6 +77,9 @@ export default function DashboardPage() {
   // 하이드레이션 불일치를 피하기 위해서다.
   const [today, setToday] = useState<Date | null>(null);
   useEffect(() => setToday(new Date()), []);
+
+  const [filter, setFilter] = useState<FilterKey>('all');
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (currentGroupId === null) {
@@ -152,20 +165,6 @@ export default function DashboardPage() {
   const todayKey = today ? toDateKey(today) : null;
   const groupName = groups.find((g) => g.id === currentGroupId)?.name;
 
-  const openTodos = useMemo(() => todos.filter((t) => !t.is_done), [todos]);
-
-  const { dueTodayCount, overdueCount } = useMemo(() => {
-    if (!todayKey) return { dueTodayCount: 0, overdueCount: 0 };
-    let dueToday = 0;
-    let overdue = 0;
-    for (const todo of openTodos) {
-      if (!todo.due_date) continue;
-      if (todo.due_date === todayKey) dueToday += 1;
-      else if (todo.due_date < todayKey) overdue += 1;
-    }
-    return { dueTodayCount: dueToday, overdueCount: overdue };
-  }, [openTodos, todayKey]);
-
   const upcomingSchedules = useMemo(() => {
     if (!today || !todayKey) return [];
     const limitKey = toDateKey(shiftDays(today, UPCOMING_WINDOW_DAYS));
@@ -174,27 +173,39 @@ export default function DashboardPage() {
       .slice(0, 5);
   }, [schedules, today, todayKey]);
 
+  // slice(0, 8)을 뺐다. 두 단 구성에서는 목록이 세로로 스크롤되므로 자를 이유가
+  // 없고, 자르면 필터 버튼의 숫자와 실제 보이는 개수가 어긋난다.
   const priorityStream = useMemo(() => {
     if (!todayKey) return [];
-    return buildPriorityStream(commitments, todos, todayKey).slice(0, 8);
+    return buildPriorityStream(commitments, todos, todayKey);
   }, [commitments, todos, todayKey]);
+
+  const counts = useMemo(
+    () => (todayKey ? countByFilter(priorityStream, todayKey) : ZERO_COUNTS),
+    [priorityStream, todayKey],
+  );
+
+  const visibleItems = useMemo(
+    () => (todayKey ? applyFilter(priorityStream, filter, todayKey) : []),
+    [priorityStream, filter, todayKey],
+  );
+
+  // 고른 항목이 필터에 걸려 사라졌거나 완료 처리로 목록에서 빠지면 상세는
+  // 없는 것을 계속 보여준다. 목록에서 찾아 없으면 오늘 개요로 되돌린다.
+  const selectedItem = useMemo(
+    () => visibleItems.find((i) => i.key === selectedKey) ?? null,
+    [visibleItems, selectedKey],
+  );
 
   // todayKey가 아직 없거나 할 일·약속 조회가 안 끝났으면 빈 배열이 "처리할
   // 것 없음"이 아니라 "아직 모른다"는 뜻이다. PriorityStream이 둘을 구분하게 한다.
   const isPriorityStreamLoading = !todayKey || workspaceLoading || commitmentsLoading;
 
-  const metrics: Metric[] = [
-    { label: 'Open', value: openTodos.length, hint: '진행 중인 할 일' },
-    { label: 'Today', value: dueTodayCount, hint: '오늘 마감', alert: true },
-    { label: 'Overdue', value: overdueCount, hint: '기한 지남', alert: true },
-    { label: 'Upcoming', value: upcomingSchedules.length, hint: '7일 내 일정' },
-  ];
-
   if (currentGroupId === null) {
     return (
       <PageShell eyebrow="Dashboard" title="업무 현황" width="wide">
         <ReceivedInvitations onChanged={refreshMe} />
-        <p className="text-sm text-foreground/60">
+        <p className="text-sm text-ink-2">
           아직 소속된 팀이 없습니다. 받은 초대를 수락하거나 팀 관리에서 팀을 만들어 보세요.
         </p>
       </PageShell>
@@ -207,7 +218,7 @@ export default function DashboardPage() {
       title="업무 현황"
       width="wide"
       actions={
-        <p className="text-xs text-fg-dim">
+        <p className="text-xs text-ink-2">
           {user?.name}
           {groupName && ` · ${groupName}`}
           {todayKey && ` · ${todayKey}`}
@@ -217,7 +228,7 @@ export default function DashboardPage() {
       {(workspaceError || documentsError || commitmentsError) && (
         <div
           role="alert"
-          className="mt-5 rounded-xl border border-red-500/30 bg-red-500/[0.08] px-4 py-3 text-sm text-red-300"
+          className="mt-5 rounded-md border border-late/40 bg-late-wash px-4 py-3 text-sm text-late"
         >
           <p className="font-semibold">일부 데이터를 불러오지 못했습니다.</p>
           <p className="mt-1 text-xs leading-relaxed opacity-80">
@@ -232,23 +243,34 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_260px] xl:grid-cols-[1fr_280px]">
-        {/* 좁은 화면에서는 요약이 본류 위로 올라간다. */}
-        <div className="order-2 lg:order-1">
-          <PriorityStream
-            items={priorityStream}
-            isLoading={isPriorityStreamLoading}
-            onCompleteTodo={(id) => toggleTodo(id, true)}
-          />
+      <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="min-w-0">
+          <FilterBar counts={counts} value={filter} onChange={setFilter} />
+          <Surface level="card" className="mt-3 overflow-hidden">
+            <PriorityStream
+              items={visibleItems}
+              isLoading={isPriorityStreamLoading}
+              selectedKey={selectedKey}
+              onSelect={(item) => setSelectedKey(item.key)}
+            />
+          </Surface>
           {commitmentsTruncated && (
-            <p className="mt-2 text-[11px] leading-relaxed text-foreground/40">
+            <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
               오래된 약속 일부가 이 목록에 없습니다. 확인 필요에서 전체를 볼 수 있습니다.
             </p>
           )}
         </div>
-        <div className="order-1 lg:order-2">
-          <SummaryColumn metrics={metrics} schedules={upcomingSchedules} documents={documents} />
-        </div>
+
+        {/* 좁은 화면에서는 상세가 목록 아래로 내려간다. 두 단을 억지로 유지하면
+            둘 다 못 읽을 폭이 된다. */}
+        <Surface level="raised" className="self-start lg:sticky lg:top-6">
+          <DetailPanel
+            item={selectedItem}
+            schedules={upcomingSchedules}
+            documents={documents}
+            onCompleteTodo={(id) => toggleTodo(id, true)}
+          />
+        </Surface>
       </div>
 
       <div id="commitments" className="mt-8 scroll-mt-6">
@@ -261,10 +283,10 @@ export default function DashboardPage() {
             <Link
               key={mod.href}
               href={mod.href}
-              className="group rounded-xl bg-surface px-4 py-3.5 transition-[transform,background-color] duration-300 ease-[cubic-bezier(.16,1,.3,1)] hover:-translate-y-[3px] hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              className="group rounded-xl bg-card px-4 py-3.5 transition-[transform,background-color] duration-300 ease-[cubic-bezier(.16,1,.3,1)] hover:-translate-y-[3px] hover:bg-blue-wash focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue focus-visible:ring-offset-2 focus-visible:ring-offset-paper"
             >
-              <p className="text-xs font-bold text-foreground group-hover:text-brand">{mod.title}</p>
-              <p className="mt-0.5 text-[11px] text-fg-dim">{mod.description}</p>
+              <p className="text-xs font-bold text-ink group-hover:text-blue">{mod.title}</p>
+              <p className="mt-0.5 text-[11px] text-ink-3">{mod.description}</p>
             </Link>
           ))}
         </div>
