@@ -503,3 +503,42 @@ def test_문서_분류만_소진되면_기타로_강등하고_초안은_남는�
         and getattr(record, "event", "") == "document.classify.budget_exhausted"
         for record in caplog.records
     )
+
+
+def test_실제_소진_뒤_다음_메시지는_Gemini를_부르지_않는다(client, monkeypatch):
+    """장부를 만든 목적이 이 상황이다. 실제 한도가 끝난 뒤에도 장부가 낮게
+    남아 있으면 메시지마다 실 API를 두드려 429를 받아온다 — 아껴야 하는
+    순간에 아무것도 아끼지 않는다."""
+    auth, _, room_id = _setup(client)
+    _say(client, auth, room_id, "/help")  # ai_mode 켜기. Gemini 호출 없음
+
+    calls = []
+
+    def boom(**kwargs):
+        calls.append(1)
+        raise genai_errors.ClientError(
+            429,
+            {
+                "error": {
+                    "code": 429,
+                    "status": "RESOURCE_EXHAUSTED",
+                    "details": [
+                        {
+                            "violations": [
+                                {"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}
+                            ]
+                        }
+                    ],
+                }
+            },
+        )
+
+    monkeypatch.setattr(gemini_service.client.models, "generate_content", boom)
+
+    first = _say(client, auth, room_id, "보고서 초안 부탁드려요")
+    assert first["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"
+
+    second = _say(client, auth, room_id, "그럼 자료는 언제 주시나요")
+    assert second["error"]["code"] == "AI_DAILY_BUDGET_EXHAUSTED"
+
+    assert len(calls) == 1, "소진을 알고도 두 번째 메시지가 실 API를 또 태웠다"
