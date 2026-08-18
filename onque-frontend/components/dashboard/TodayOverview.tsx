@@ -10,9 +10,10 @@ type Props = {
 };
 
 /** DocumentRecord에는 title이 없다. history 페이지와 같은 방식으로
- *  headline이 있으면 그걸, 없으면 summary 평문을 쓴다. */
+ *  headline이 있으면 그걸, 없으면 summary 평문을 쓴다. 둘 다 비어 있으면
+ *  링크에 읽을 글자가 하나도 없는 빈 줄이 되므로 filename까지 내려간다. */
 function documentLabel(doc: DocumentRecord): string {
-  return doc.structured?.headline || doc.summary.replace(/\n/g, ' ');
+  return doc.structured?.headline || doc.summary.replace(/\n/g, ' ') || doc.filename;
 }
 
 /**
@@ -25,9 +26,9 @@ export function TodayOverview({ schedules, documents }: Props) {
   return (
     <div className="space-y-6 p-5">
       <div>
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">
+        <h2 className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">
           다가오는 일정
-        </p>
+        </h2>
         {schedules.length === 0 ? (
           <p className="mt-2 text-xs text-ink-3">7일 안에 예정된 일정이 없습니다.</p>
         ) : (
@@ -45,7 +46,7 @@ export function TodayOverview({ schedules, documents }: Props) {
       </div>
 
       <div className="border-t border-rule pt-5">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">최근 요약</p>
+        <h2 className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">최근 요약</h2>
         {documents.length === 0 ? (
           <p className="mt-2 text-xs text-ink-3">아직 만든 요약이 없습니다.</p>
         ) : (

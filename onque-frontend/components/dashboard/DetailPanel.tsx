@@ -62,16 +62,16 @@ export function DetailPanel({ item, schedules, documents, onCompleteTodo }: Prop
 
       {item.evidence !== null ? (
         <div className="mt-5 border-t border-rule pt-4">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">
+          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-ink-3">
             {item.sourceType ? SOURCE_TEXT[item.sourceType] : '근거'}
-          </p>
+          </h3>
           <blockquote className="mt-2 border-l-2 border-blue bg-blue-wash px-3 py-2.5 text-xs leading-relaxed text-ink">
             {item.evidence || '근거 문장이 비어 있습니다.'}
           </blockquote>
         </div>
       ) : (
         <p className="mt-5 border-t border-rule pt-4 text-[11px] leading-relaxed text-ink-3">
-          이 할 일은 어느 대화에서 나왔는지 기록이 남아 있지 않습니다.
+          할 일에는 원본 대화가 저장되지 않습니다. 약속은 근거 문장을 함께 보여줍니다.
         </p>
       )}
 
