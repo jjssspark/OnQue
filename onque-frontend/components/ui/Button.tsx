@@ -20,7 +20,18 @@ type ButtonClassesOptions = {
   variant?: 'primary' | 'ghost' | 'danger';
   size?: 'sm' | 'md';
   className?: string;
+  /** 버튼이 놓이는 면. 링 오프셋 색을 그 면에 맞춘다. 기본값은 기존 동작과 같은 'paper'. */
+  onSurface?: 'paper' | 'card' | 'card-2' | 'navy';
 };
+
+// className으로 ring-offset을 덮어쓰는 방식은 같은 Tailwind 특이도라 생성된
+// CSS 순서에 따라 승패가 갈려 못 믿는다. 그래서 오프셋 색을 옵션으로 받는다.
+const RING_OFFSET = {
+  paper: 'focus-visible:ring-offset-paper',
+  card: 'focus-visible:ring-offset-card',
+  'card-2': 'focus-visible:ring-offset-card-2',
+  navy: 'focus-visible:ring-offset-navy',
+} as const;
 
 // 다음 태스크의 약속 카드는 <a> 안에 <button>을 넣지 않고 <Link>에 이
 // 클래스를 직접 입힌다. 그래서 클래스 문자열을 함수로 빼 export 한다.
@@ -32,11 +43,12 @@ export function buttonClasses({
   variant = 'primary',
   size = 'md',
   className = '',
+  onSurface = 'paper',
 }: ButtonClassesOptions = {}): string {
   // focus-visible 링은 필수다. 기존 코드에는 포커스 표시가 아예 없어
   // 키보드 사용자가 지금 어디에 있는지 알 수 없었다.
-  // 링 오프셋 바탕이 어두운 배경에서 종이색으로 바뀐다.
-  return `inline-flex items-center rounded-md font-bold transition-[transform,filter,background-color] duration-150 active:scale-[.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue focus-visible:ring-offset-2 focus-visible:ring-offset-paper disabled:pointer-events-none disabled:opacity-50 ${VARIANT[variant]} ${SIZE[size]} ${className}`;
+  // 링 오프셋 색은 버튼이 놓인 면(onSurface)에 맞춘다.
+  return `inline-flex items-center rounded-md font-bold transition-[transform,filter,background-color] duration-150 active:scale-[.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue focus-visible:ring-offset-2 ${RING_OFFSET[onSurface]} disabled:pointer-events-none disabled:opacity-50 ${VARIANT[variant]} ${SIZE[size]} ${className}`;
 }
 
 export function Button({
