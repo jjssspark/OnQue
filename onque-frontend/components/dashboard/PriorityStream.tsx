@@ -82,7 +82,11 @@ export function PriorityStream({ items, isLoading = false, selectedKey, onSelect
                 {!isLate && item.isDueSoon && <StatusChip tone="soon">마감 임박</StatusChip>}
               </div>
 
-              <p className="mt-1 text-[11px] text-ink-3">
+              {/* ink-3는 late-wash(3.91:1)·blue-wash(3.83:1)에서 4.5:1 미달이라
+                  이 줄처럼 배경이 상태별로 바뀌는 자리에는 못 쓴다. ink-2는 네
+                  배경(card 6.66 · card-2 7.03 · late-wash 5.70 · blue-wash 5.59)
+                  전부에서 넉넉히 통과한다. */}
+              <p className="mt-1 text-[11px] text-ink-2">
                 {item.sourceLabel} · {dueText(item)}
                 {item.isUnconfirmed && ' · 아직 확정 안 됨'}
               </p>

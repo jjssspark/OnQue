@@ -11,6 +11,7 @@ import { PriorityStream } from '@/components/dashboard/PriorityStream';
 import { FilterBar } from '@/components/dashboard/FilterBar';
 import { DetailPanel } from '@/components/dashboard/DetailPanel';
 import { Surface } from '@/components/ui/Surface';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { PageShell } from '@/components/PageShell';
 import { buildPriorityStream } from '@/lib/priority';
 import { applyFilter, countByFilter, type FilterKey } from '@/lib/dashboard-filter';
@@ -231,11 +232,15 @@ export default function DashboardPage() {
           className="mt-5 rounded-md border border-late/40 bg-late-wash px-4 py-3 text-sm text-late"
         >
           <p className="font-semibold">일부 데이터를 불러오지 못했습니다.</p>
-          <p className="mt-1 text-xs leading-relaxed opacity-80">
+          {/* opacity-80/70은 late(빨강)를 late-wash 위에서 옅게 흐려 4.5:1
+              밑으로 떨어뜨렸다(각 4.35:1, 3.59:1). 불투명도로 흐리는 대신
+              ink-2로 색 자체를 바꾼다 — late-wash 위 5.70:1이라 여유 있게
+              통과하면서도 굵은 제목(text-late)과는 확실히 구분된다. */}
+          <p className="mt-1 text-xs leading-relaxed text-ink-2">
             아래 수치와 목록이 비어 보이는 것은 실제로 항목이 없어서가 아니라 조회에 실패했기
             때문일 수 있습니다.
           </p>
-          <ul className="mt-2 space-y-0.5 font-mono text-[11px] opacity-70">
+          <ul className="mt-2 space-y-0.5 font-mono text-[11px] text-ink-2">
             {workspaceError && <li>할 일·일정: {workspaceError}</li>}
             {commitmentsError && <li>약속: {commitmentsError}</li>}
             {documentsError && <li>요약 이력: {documentsError}</li>}
@@ -245,7 +250,21 @@ export default function DashboardPage() {
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="min-w-0">
-          <FilterBar counts={counts} value={filter} onChange={setFilter} />
+          {/* todayKey가 아직 없거나 할 일·약속 조회가 안 끝났으면 counts는
+              ZERO_COUNTS다. 그 상태로 FilterBar를 그리면 숫자 0이 "처리할 것
+              없음"처럼 읽혀 옆의 PriorityStream 스켈레톤과 다른 말을 하게 된다.
+              로딩 중에는 필터 대신 자리만 잡는 스켈레톤을 보여준다. */}
+          {isPriorityStreamLoading ? (
+            <div role="status" aria-label="필터 불러오는 중" className="flex flex-wrap gap-1.5">
+              <Skeleton className="h-7 w-14" />
+              <Skeleton className="h-7 w-14" />
+              <Skeleton className="h-7 w-14" />
+              <Skeleton className="h-7 w-16" />
+              <Skeleton className="h-7 w-20" />
+            </div>
+          ) : (
+            <FilterBar counts={counts} value={filter} onChange={setFilter} />
+          )}
           <Surface level="card" className="mt-3 overflow-hidden">
             <PriorityStream
               items={visibleItems}
