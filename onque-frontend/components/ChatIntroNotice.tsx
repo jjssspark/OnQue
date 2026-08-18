@@ -34,18 +34,18 @@ export function ChatIntroNotice() {
   if (seen || dismissed) return null;
 
   return (
-    <aside className="rounded-xl border border-brand/25 bg-brand/[0.06] px-4 py-3.5">
-      <p className="text-xs font-semibold text-brand">이 방은 이렇게 동작합니다</p>
-      <p className="mt-1.5 text-xs leading-relaxed text-foreground/60">
+    <aside className="rounded-md border border-blue/25 bg-blue-wash px-4 py-3.5">
+      <p className="text-xs font-semibold text-blue">이 방은 이렇게 동작합니다</p>
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-2">
         여기 오간 대화는 주기적으로 자동 확인되어, 약속으로 보이는 말이 대시보드의
         &lsquo;확인 필요&rsquo;에 올라옵니다. 확정하기 전까지는 아무것도 일정이나 할 일이 되지
         않습니다. 요약이나 문서 작성이 필요하면{' '}
-        <span className="font-mono text-brand">/help</span> 로 비서를 부르세요.
+        <span className="font-mono text-blue">/help</span> 로 비서를 부르세요.
       </p>
       <button
         type="button"
         onClick={dismiss}
-        className="mt-2.5 rounded text-[11px] font-semibold text-fg-dim transition-colors hover:text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        className="mt-2.5 rounded text-[11px] font-semibold text-ink-2 transition-colors hover:text-blue-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue"
       >
         알겠습니다
       </button>

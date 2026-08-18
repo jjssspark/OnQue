@@ -123,22 +123,22 @@ export function AssistantActionCard({
   };
 
   return (
-    <div className="rounded-lg border border-border bg-foreground/[0.02] px-3 py-2">
-      <p className="text-xs font-bold leading-relaxed text-foreground">{action.label}</p>
+    <div className="rounded-lg border border-rule-strong bg-card-2 px-3 py-2">
+      <p className="text-xs font-bold leading-relaxed text-ink">{action.label}</p>
 
       {action.kind === 'commitment_status' && (
-        <p className="mt-1 border-l-2 border-border pl-2 text-xs italic leading-relaxed text-foreground/70">
+        <p className="mt-1 border-l-2 border-rule pl-2 text-xs italic leading-relaxed text-ink-2">
           {String(action.payload.content ?? '')}
           {action.payload.client_name ? ` — ${String(action.payload.client_name)}` : ''}
         </p>
       )}
 
       {action.warning && state !== 'declined' && (
-        <p className="mt-1 font-mono text-[10px] text-amber-400">{action.warning}</p>
+        <p className="mt-1 font-mono text-[10px] text-soon">{action.warning}</p>
       )}
 
       {failure && (
-        <p role="alert" className="mt-1 text-[10px] leading-relaxed text-red-300">
+        <p role="alert" className="mt-1 text-[10px] leading-relaxed text-late">
           {failure}
         </p>
       )}
@@ -149,30 +149,30 @@ export function AssistantActionCard({
             <button
               type="button"
               onClick={run}
-              className="rounded border border-accent/40 px-2 py-1 text-[10px] font-bold text-accent transition hover:bg-accent/[0.12]"
+              className="rounded border border-soon/40 px-2 py-1 text-[10px] font-bold text-soon transition hover:bg-soon-wash"
             >
               그렇게 해
             </button>
             <button
               type="button"
               onClick={() => setState('declined')}
-              className="rounded border border-border px-2 py-1 text-[10px] text-foreground/60 transition hover:bg-foreground/[0.04]"
+              className="rounded border border-rule px-2 py-1 text-[10px] text-ink-2 transition hover:bg-card"
             >
               아니
             </button>
           </>
         )}
 
-        {state === 'running' && <span className="text-[10px] text-foreground/40">처리 중…</span>}
+        {state === 'running' && <span className="text-[10px] text-ink-3">처리 중…</span>}
 
         {state === 'applied' && (
           <>
-            <span className="text-[10px] text-foreground/50">적용됨</span>
+            <span className="text-[10px] text-ink-3">적용됨</span>
             {action.risk === 'safe' && (
               <button
                 type="button"
                 onClick={rollback}
-                className="rounded border border-border px-2 py-1 text-[10px] text-foreground/60 transition hover:bg-foreground/[0.04]"
+                className="rounded border border-rule px-2 py-1 text-[10px] text-ink-2 transition hover:bg-card"
               >
                 취소
               </button>
@@ -180,13 +180,13 @@ export function AssistantActionCard({
           </>
         )}
 
-        {state === 'declined' && <span className="text-[10px] text-foreground/40">하지 않음</span>}
+        {state === 'declined' && <span className="text-[10px] text-ink-3">하지 않음</span>}
 
         {state === 'failed' && (
           <button
             type="button"
             onClick={run}
-            className="rounded border border-border px-2 py-1 text-[10px] text-foreground/60 transition hover:bg-foreground/[0.04]"
+            className="rounded border border-rule px-2 py-1 text-[10px] text-ink-2 transition hover:bg-card"
           >
             다시 시도
           </button>

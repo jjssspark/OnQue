@@ -115,7 +115,7 @@ export function AssistantPanel() {
   const budgetExhausted = isBudgetExhausted(aiBudget);
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col border-t border-border">
+    <section className="flex min-h-0 flex-1 flex-col border-t border-rule">
       {/* 답변은 사용자 조작 없이 비동기로 도착한다. 알리지 않으면 스크린리더
           사용자는 비서가 답했다는 사실 자체를 모른다. polite로 두어 타이핑
           중이면 끊지 않고 기다렸다 읽게 한다. */}
@@ -124,7 +124,7 @@ export function AssistantPanel() {
         className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4"
       >
         {messages.length === 0 && !pending && (
-          <p className="text-xs leading-relaxed text-foreground/40">
+          <p className="text-xs leading-relaxed text-ink-3">
             약속·할 일·일정에 대해 물어보세요. 예: A사한테 뭐 약속했더라?
           </p>
         )}
@@ -133,9 +133,7 @@ export function AssistantPanel() {
           <div key={i} className={m.role === 'user' ? 'text-right' : ''}>
             <p
               className={`inline-block max-w-[92%] whitespace-pre-wrap rounded-lg px-3 py-2 text-xs leading-relaxed ${
-                m.role === 'user'
-                  ? 'bg-accent/[0.12] text-foreground'
-                  : 'bg-foreground/[0.04] text-foreground/90'
+                m.role === 'user' ? 'bg-soon-wash text-ink' : 'bg-paper text-ink'
               }`}
             >
               {m.content}
@@ -159,7 +157,7 @@ export function AssistantPanel() {
         ))}
 
         {pending && (
-          <p role="status" className="text-xs text-foreground/40">
+          <p role="status" className="text-xs text-ink-3">
             비서가 확인하는 중입니다…
           </p>
         )}
@@ -172,12 +170,12 @@ export function AssistantPanel() {
           추가된 것으로도 잡혀 두 번 낭독될 수 있다. 실패는 대기열에 밀리면
           안 되는 소식이라 밖으로 뺐다. */}
       {error && (
-        <p role="alert" className="px-5 py-2 text-xs leading-relaxed text-red-300">
+        <p role="alert" className="px-5 py-2 text-xs leading-relaxed text-late">
           {error}
         </p>
       )}
 
-      <div className="border-t border-border px-4 py-3">
+      <div className="border-t border-rule px-4 py-3">
         {/* 잔량이 있으면 BudgetNotice가 null이라 이 칸은 비어 있다.
             empty:hidden이 없으면 안 보이는 여백만 남는다. */}
         <div className="mb-2 empty:hidden">
@@ -200,14 +198,14 @@ export function AssistantPanel() {
             placeholder="무엇이든 물어보세요"
             aria-label="비서에게 물어보기"
             aria-describedby={budgetExhausted ? budgetNoticeId : undefined}
-            className="min-w-0 flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-xs text-foreground outline-none placeholder:text-foreground/30 focus:border-accent/50"
+            className="min-w-0 flex-1 rounded-lg border border-rule bg-transparent px-3 py-2 text-xs text-ink outline-none placeholder:text-ink-3 focus:border-soon/50"
           />
           <button
             type="submit"
             disabled={pending || !draft.trim()}
             aria-disabled={budgetExhausted}
             aria-describedby={budgetExhausted ? budgetNoticeId : undefined}
-            className="shrink-0 rounded-lg border border-accent/40 px-3 py-2 text-xs font-bold text-accent transition hover:bg-accent/[0.12] disabled:opacity-30 aria-disabled:opacity-30 aria-disabled:hover:bg-transparent"
+            className="shrink-0 rounded-lg border border-soon/40 px-3 py-2 text-xs font-bold text-soon transition hover:bg-soon-wash disabled:opacity-30 aria-disabled:opacity-30 aria-disabled:hover:bg-transparent"
           >
             보내기
           </button>

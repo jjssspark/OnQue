@@ -24,19 +24,19 @@ export function AnalyzingOverlay({ filename, stage, stages, hint }: AnalyzingOve
 
   return (
     <div
-      className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-5 rounded-2xl bg-surface/85 px-6 py-8 backdrop-blur-md [animation:fade-in_0.2s_ease-out]"
+      className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-5 rounded-md bg-card-2/85 px-6 py-8 backdrop-blur-md [animation:fade-in_0.2s_ease-out]"
       role="status"
       aria-live="polite"
     >
       <div className="relative h-16 w-16" aria-hidden>
-        <span className="absolute inset-0 rounded-full border-2 border-brand/15" />
-        <span className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-brand border-r-brand/40" />
-        <span className="absolute inset-3 animate-pulse rounded-full bg-brand/20" />
+        <span className="absolute inset-0 rounded-full border-2 border-blue/15" />
+        <span className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-blue border-r-blue/40" />
+        <span className="absolute inset-3 animate-pulse rounded-full bg-blue/20" />
       </div>
 
       <div className="text-center">
-        <p className="text-sm font-semibold text-foreground">{stages[stage]}</p>
-        <p className="mt-1 max-w-[22rem] truncate font-mono text-[11px] text-foreground/40">
+        <p className="text-sm font-semibold text-ink">{stages[stage]}</p>
+        <p className="mt-1 max-w-[22rem] truncate font-mono text-[11px] text-ink-3">
           {filename}
         </p>
       </div>
@@ -46,12 +46,12 @@ export function AnalyzingOverlay({ filename, stage, stages, hint }: AnalyzingOve
           <li key={label} className="flex flex-1 flex-col gap-1.5">
             <span
               className={`h-1 rounded-full transition-colors duration-500 ${
-                i < stage ? 'bg-brand' : i === stage ? 'animate-pulse bg-brand' : 'bg-foreground/10'
+                i < stage ? 'bg-blue' : i === stage ? 'animate-pulse bg-blue' : 'bg-ink-3'
               }`}
             />
             <span
               className={`text-[10px] transition-colors ${
-                i === stage ? 'font-semibold text-brand' : 'text-foreground/30'
+                i === stage ? 'font-semibold text-blue' : 'text-ink-3'
               }`}
             >
               {label}
@@ -61,8 +61,8 @@ export function AnalyzingOverlay({ filename, stage, stages, hint }: AnalyzingOve
       </ol>
 
       <div className="text-center">
-        <p className="font-mono text-xs tabular-nums text-foreground/45">{seconds}초 경과</p>
-        <p className="mt-1.5 max-w-xs text-[11px] leading-relaxed text-foreground/35">{hint}</p>
+        <p className="font-mono text-xs tabular-nums text-ink-3">{seconds}초 경과</p>
+        <p className="mt-1.5 max-w-xs text-[11px] leading-relaxed text-ink-3">{hint}</p>
       </div>
     </div>
   );

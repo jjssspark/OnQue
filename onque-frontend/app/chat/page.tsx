@@ -32,7 +32,7 @@ const CHAT_DESCRIPTION = (
   <>
     주제별로 방을 나눠 팀원과 대화하세요. 방을 만들면 나만 들어와 있고, 채팅창 오른쪽 위
     인원 버튼으로 같은 그룹 사람을 초대합니다. AI는 평소엔 끼어들지 않고,{' '}
-    <span className="font-mono text-brand">/help</span> 로 부를 때만 들어와 요약·문서 작성·할
+    <span className="font-mono text-blue">/help</span> 로 부를 때만 들어와 요약·문서 작성·할
     일 등록을 대신합니다.
   </>
 );
@@ -155,7 +155,7 @@ function ChatPageContent() {
         description={CHAT_DESCRIPTION}
         width="narrow"
       >
-        <p className="text-sm text-foreground/60">
+        <p className="text-sm text-ink-2">
           아직 소속된 그룹이 없습니다. 관리자가 그룹에 초대하면 이용할 수 있습니다.
         </p>
       </PageShell>
@@ -171,7 +171,7 @@ function ChatPageContent() {
     >
       <div className="relative">
         <div
-          className="pointer-events-none absolute -top-20 left-1/3 h-72 w-72 rounded-full bg-brand/10 blur-[120px]"
+          className="pointer-events-none absolute -top-20 left-1/3 h-72 w-72 rounded-full bg-blue/10 blur-[120px]"
           aria-hidden
         />
 
@@ -181,15 +181,15 @@ function ChatPageContent() {
             value={newRoomName}
             onChange={(e) => setNewRoomName(e.target.value)}
             placeholder="새 채팅방 이름 (예: 디자인 리뷰)"
-            className="flex-1 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm text-foreground placeholder:text-foreground/30 focus:border-brand focus:outline-none sm:max-w-xs"
+            className="flex-1 rounded-md border border-rule bg-card px-4 py-2.5 text-sm text-ink placeholder:text-ink-3 focus:border-blue focus:outline-none sm:max-w-xs"
           />
           <button
             type="submit"
             disabled={creating || !newRoomName.trim()}
-            className={`shrink-0 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
+            className={`shrink-0 rounded-md px-4 py-2.5 text-sm font-semibold transition-all ${
               creating || !newRoomName.trim()
-                ? 'cursor-not-allowed bg-foreground/10 text-foreground/30'
-                : 'bg-brand text-brand-foreground hover:-translate-y-px hover:brightness-110'
+                ? 'cursor-not-allowed bg-rule text-ink-3'
+                : 'bg-blue text-card-2 hover:bg-blue-deep hover:-translate-y-px'
             }`}
           >
             방 만들기
@@ -197,7 +197,7 @@ function ChatPageContent() {
         </form>
 
         {errorMsg && (
-          <p role="alert" className="mt-4 text-sm text-red-300">
+          <p role="alert" className="mt-4 text-sm text-late">
             {errorMsg}
           </p>
         )}
@@ -206,9 +206,9 @@ function ChatPageContent() {
           {loading && <SkeletonList rows={3} rowClassName="h-16" label="채팅방 불러오는 중" />}
 
           {!loading && rooms.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-border p-10 text-center">
-              <p className="text-sm text-foreground/50">아직 채팅방이 없습니다.</p>
-              <p className="mt-1.5 text-xs text-foreground/35">
+            <div className="rounded-md border border-dashed border-rule p-10 text-center">
+              <p className="text-sm text-ink-2">아직 채팅방이 없습니다.</p>
+              <p className="mt-1.5 text-xs text-ink-2">
                 위에서 첫 방을 만들어 대화를 시작하세요.
               </p>
             </div>
@@ -217,7 +217,7 @@ function ChatPageContent() {
           {rooms.map((room, i) => (
             <div
               key={room.id}
-              className="group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-border bg-surface transition-all hover:-translate-y-0.5 hover:border-brand/40 [animation:summary-in_0.4s_ease-out_backwards]"
+              className="group relative flex items-center gap-3 overflow-hidden rounded-md border border-rule bg-card transition-all hover:-translate-y-0.5 hover:border-blue/40 [animation:summary-in_0.4s_ease-out_backwards]"
               style={{ animationDelay: `${i * 50}ms` }}
             >
               <button
@@ -226,7 +226,7 @@ function ChatPageContent() {
                 className="flex min-w-0 flex-1 items-center gap-3.5 px-4 py-3.5 text-left"
               >
                 <span
-                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand/[0.12] text-base font-bold text-brand ring-1 ring-brand/20 transition-transform group-hover:scale-105"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-blue-wash text-base font-bold text-blue ring-1 ring-blue/20 transition-transform group-hover:scale-105"
                   aria-hidden
                 >
                   {initial(room.name)}
@@ -235,34 +235,34 @@ function ChatPageContent() {
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-2">
                     <span className="flex min-w-0 items-center gap-1.5">
-                      <span className="truncate text-sm font-semibold text-foreground">
+                      <span className="truncate text-sm font-semibold text-ink">
                         {room.name}
                       </span>
-                      <span className="shrink-0 font-mono text-[11px] text-foreground/30">
+                      <span className="shrink-0 font-mono text-[11px] text-ink-3">
                         {room.member_count}
                       </span>
                       {room.ai_mode && (
-                        <span className="shrink-0 rounded-full bg-brand/15 px-1.5 py-0.5 font-mono text-[10px] font-bold text-brand ring-1 ring-brand/25">
+                        <span className="shrink-0 rounded-full bg-blue-wash px-1.5 py-0.5 font-mono text-[10px] font-bold text-blue ring-1 ring-blue/25">
                           AI
                         </span>
                       )}
                     </span>
                     {room.last_message && (
-                      <span className="shrink-0 font-mono text-[11px] text-foreground/30">
+                      <span className="shrink-0 font-mono text-[11px] text-ink-3">
                         {formatRelative(room.last_message.created_at)}
                       </span>
                     )}
                   </span>
-                  <span className="mt-0.5 block truncate text-xs text-foreground/45">
+                  <span className="mt-0.5 block truncate text-xs text-ink-3">
                     {room.last_message ? (
                       <>
                         {room.last_message.is_bot && (
-                          <span className="mr-1 font-semibold text-brand">비서</span>
+                          <span className="mr-1 font-semibold text-blue">비서</span>
                         )}
                         {room.last_message.content.replace(/\n/g, ' ')}
                       </>
                     ) : (
-                      <span className="text-foreground/25">대화를 시작해보세요</span>
+                      <span className="text-ink-3">대화를 시작해보세요</span>
                     )}
                   </span>
                 </span>
@@ -271,7 +271,7 @@ function ChatPageContent() {
               <button
                 type="button"
                 onClick={() => handleDelete(room)}
-                className="hover-reveal mr-3 shrink-0 rounded-lg px-2 py-1 text-[11px] text-foreground/25 transition-all hover:bg-red-500/10 hover:text-red-300"
+                className="hover-reveal mr-3 shrink-0 rounded-lg px-2 py-1 text-[11px] text-ink-3 transition-all hover:bg-late-wash hover:text-late"
               >
                 삭제
               </button>

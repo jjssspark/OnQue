@@ -160,33 +160,33 @@ export function ChatWindow({
         type="button"
         onClick={onClose}
         aria-label="채팅창 닫기"
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm [animation:fade-in_0.2s_ease-out]"
+        className="absolute inset-0 bg-ink/70 backdrop-blur-sm [animation:fade-in_0.2s_ease-out]"
       />
 
-      <div className="relative flex h-full w-full flex-col overflow-hidden border border-white/10 bg-surface shadow-2xl [animation:chat-pop_0.28s_cubic-bezier(0.16,1,0.3,1)] sm:h-[min(85vh,720px)] sm:max-w-lg sm:rounded-2xl">
+      <div className="relative flex h-full w-full flex-col overflow-hidden border border-rule-strong bg-card-2 shadow-2xl [animation:chat-pop_0.28s_cubic-bezier(0.16,1,0.3,1)] sm:h-[min(85vh,720px)] sm:max-w-lg sm:rounded-md">
         <div
           className={`pointer-events-none absolute -top-24 left-1/2 h-56 w-56 -translate-x-1/2 rounded-full blur-[90px] transition-opacity duration-500 ${
-            aiMode ? 'bg-brand/40' : 'bg-brand/15'
+            aiMode ? 'bg-blue/40' : 'bg-blue/15'
           }`}
           aria-hidden
         />
 
         <header
           className={`relative flex items-center justify-between gap-3 border-b px-5 py-4 transition-colors ${
-            aiMode ? 'border-brand/40 bg-brand/[0.06]' : 'border-border'
+            aiMode ? 'border-blue/40 bg-blue-wash' : 'border-rule'
           }`}
         >
           <div className="min-w-0">
-            <h2 id="chat-window-title" className="truncate text-sm font-bold text-foreground">
+            <h2 id="chat-window-title" className="truncate text-sm font-bold text-ink">
               {room.name}
             </h2>
             {aiMode ? (
-              <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] font-semibold text-brand">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" aria-hidden />
+              <p className="mt-0.5 flex items-center gap-1.5 font-mono text-[11px] font-semibold text-blue">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue" aria-hidden />
                 AI 비서 참여 중 · /exit 로 내보내기
               </p>
             ) : (
-              <p className="mt-0.5 font-mono text-[11px] text-foreground/40">
+              <p className="mt-0.5 font-mono text-[11px] text-ink-3">
                 사람들끼리의 대화 · /help 로 AI 부르기
               </p>
             )}
@@ -196,9 +196,7 @@ export function ChatWindow({
             onClick={() => setShowMembers((v) => !v)}
             aria-expanded={showMembers}
             className={`ml-auto flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-              showMembers
-                ? 'bg-brand/15 text-brand ring-1 ring-brand/25'
-                : 'text-foreground/45 hover:bg-foreground/5 hover:text-foreground'
+              showMembers ? 'bg-blue text-card-2' : 'text-ink-2 hover:text-ink'
             }`}
           >
             <svg
@@ -219,7 +217,7 @@ export function ChatWindow({
           <button
             type="button"
             onClick={onClose}
-            className="shrink-0 rounded-lg p-2 text-foreground/40 transition-colors hover:bg-foreground/5 hover:text-foreground"
+            className="shrink-0 rounded-lg p-2 text-ink-2 transition-colors hover:text-ink"
             aria-label="닫기"
           >
             <svg
@@ -246,12 +244,12 @@ export function ChatWindow({
           {loading && <SkeletonList rows={4} rowClassName="h-12" label="메시지 불러오는 중" />}
 
           {!loading && messages.length === 0 && (
-            <div className="rounded-xl border border-dashed border-border px-5 py-8 text-center">
-              <p className="text-sm text-foreground/50">아직 대화가 없습니다.</p>
-              <p className="mt-2 text-xs leading-relaxed text-foreground/35">
+            <div className="rounded-md border border-dashed border-rule px-5 py-8 text-center">
+              <p className="text-sm text-ink-2">아직 대화가 없습니다.</p>
+              <p className="mt-2 text-xs leading-relaxed text-ink-3">
                 팀원과 편하게 대화하세요. AI가 필요해지면
                 <br />
-                <span className="font-mono text-brand">/help</span> 를 입력해 비서를 부를 수
+                <span className="font-mono text-blue">/help</span> 를 입력해 비서를 부를 수
                 있습니다.
               </p>
             </div>
@@ -267,16 +265,16 @@ export function ChatWindow({
                 }`}
               >
                 <div className={`max-w-[80%] ${isMine ? 'text-right' : ''}`}>
-                  <p className="mb-1 text-[11px] text-foreground/35">
+                  <p className="mb-1 text-[11px] text-ink-3">
                     {m.is_bot ? '비서' : m.sender} · {formatTime(m.created_at)}
                   </p>
                   <div
-                    className={`inline-block whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-left text-sm leading-relaxed ${
+                    className={`inline-block whitespace-pre-wrap rounded-md px-4 py-2.5 text-left text-sm leading-relaxed ${
                       m.is_bot
-                        ? 'border border-brand/30 bg-brand/[0.08] text-foreground/90'
+                        ? 'border border-blue/30 bg-blue-wash text-ink'
                         : isMine
-                          ? 'bg-brand font-medium text-brand-foreground'
-                          : 'border border-border bg-background text-foreground/90'
+                          ? 'bg-blue font-medium text-card-2'
+                          : 'border border-rule bg-paper text-ink'
                     }`}
                   >
                     {m.content}
@@ -290,14 +288,14 @@ export function ChatWindow({
         </div>
 
         {errorMsg && (
-          <p role="alert" className="px-5 pb-2 text-xs text-red-300">
+          <p role="alert" className="px-5 pb-2 text-xs text-late">
             {errorMsg}
           </p>
         )}
 
         <div
           className={`relative flex flex-col gap-2 border-t p-3 transition-colors ${
-            aiMode ? 'border-brand/40 bg-brand/[0.04]' : 'border-border'
+            aiMode ? 'border-blue/40 bg-blue-wash' : 'border-rule'
           }`}
         >
           {/* AI가 없는 방은 한도와 무관하니 안내도 띄우지 않는다. */}
@@ -320,8 +318,8 @@ export function ChatWindow({
               }
               disabled={sending}
               aria-describedby={budgetExhausted ? budgetNoticeId : undefined}
-              className={`flex-1 rounded-xl border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-foreground/30 focus:outline-none disabled:opacity-60 ${
-                aiMode ? 'border-brand/50 focus:border-brand' : 'border-border focus:border-brand'
+              className={`flex-1 rounded-md border bg-paper px-4 py-2.5 text-sm text-ink placeholder:text-ink-2 focus:outline-none disabled:opacity-60 ${
+                aiMode ? 'border-blue/50 focus:border-blue' : 'border-rule focus:border-blue'
               }`}
             />
             <button
@@ -329,10 +327,10 @@ export function ChatWindow({
               onClick={handleSend}
               disabled={sendDisabled}
               aria-describedby={budgetExhausted ? budgetNoticeId : undefined}
-              className={`shrink-0 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
+              className={`shrink-0 rounded-md px-4 py-2.5 text-sm font-semibold transition-all ${
                 sendDisabled
-                  ? 'cursor-not-allowed bg-foreground/10 text-foreground/30'
-                  : 'bg-brand text-brand-foreground hover:-translate-y-px hover:brightness-110'
+                  ? 'cursor-not-allowed bg-rule text-ink-3'
+                  : 'bg-blue text-card-2 hover:bg-blue-deep hover:-translate-y-px'
               }`}
             >
               {sending ? '전송 중' : '전송'}

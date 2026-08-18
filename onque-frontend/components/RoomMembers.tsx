@@ -90,21 +90,21 @@ export function RoomMembers({ room, onCountChange, onLeft }: RoomMembersProps) {
 
   if (loading) {
     return (
-      <div className="border-b border-border bg-background/60 px-5 py-4">
+      <div className="border-b border-rule bg-paper px-5 py-4">
         <SkeletonList rows={3} rowClassName="h-8" label="멤버 불러오는 중" />
       </div>
     );
   }
 
   return (
-    <div className="max-h-64 overflow-y-auto border-b border-border bg-background/60 px-5 py-4 [animation:summary-in_0.25s_ease-out]">
+    <div className="max-h-64 overflow-y-auto border-b border-rule bg-paper px-5 py-4 [animation:summary-in_0.25s_ease-out]">
       {errorMsg && (
-        <p role="alert" className="mb-3 text-xs text-red-300">
+        <p role="alert" className="mb-3 text-xs text-late">
           {errorMsg}
         </p>
       )}
 
-      <p className="font-mono text-[10px] uppercase tracking-widest text-foreground/35">
+      <p className="font-mono text-[10px] uppercase tracking-widest text-ink-2">
         참여 중 {members.length}
       </p>
       <ul className="mt-2 space-y-1">
@@ -114,16 +114,16 @@ export function RoomMembers({ room, onCountChange, onLeft }: RoomMembersProps) {
           return (
             <li key={m.id} className="flex items-center gap-2.5 rounded-lg px-1 py-1.5">
               <span
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand/[0.12] text-[11px] font-bold text-brand ring-1 ring-brand/20"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-wash text-[11px] font-bold text-blue ring-1 ring-blue/20"
                 aria-hidden
               >
                 {m.name.slice(0, 1)}
               </span>
-              <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">
+              <span className="min-w-0 flex-1 truncate text-xs text-ink-2">
                 {m.name}
-                {isMe && <span className="ml-1 text-foreground/35">(나)</span>}
+                {isMe && <span className="ml-1 text-ink-2">(나)</span>}
                 {m.is_owner && (
-                  <span className="ml-1.5 rounded bg-foreground/10 px-1 py-0.5 font-mono text-[9px] text-foreground/50">
+                  <span className="ml-1.5 rounded bg-rule px-1 py-0.5 font-mono text-[9px] text-ink-2">
                     방장
                   </span>
                 )}
@@ -133,7 +133,7 @@ export function RoomMembers({ room, onCountChange, onLeft }: RoomMembersProps) {
                   type="button"
                   onClick={() => handleRemove(m)}
                   disabled={busyId === m.id}
-                  className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-foreground/30 transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
+                  className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-ink-2 transition-colors hover:bg-late-wash hover:text-late disabled:opacity-40"
                 >
                   {isMe ? '나가기' : '내보내기'}
                 </button>
@@ -143,11 +143,11 @@ export function RoomMembers({ room, onCountChange, onLeft }: RoomMembersProps) {
         })}
       </ul>
 
-      <p className="mt-4 font-mono text-[10px] uppercase tracking-widest text-foreground/35">
+      <p className="mt-4 font-mono text-[10px] uppercase tracking-widest text-ink-2">
         초대 가능
       </p>
       {invitable.length === 0 ? (
-        <p className="mt-2 text-[11px] leading-relaxed text-foreground/35">
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-2">
           이 그룹 사람은 모두 방에 있습니다. 다른 팀 사람이 필요하면 그룹 관리에서 먼저 그룹에
           초대하세요.
         </p>
@@ -156,17 +156,17 @@ export function RoomMembers({ room, onCountChange, onLeft }: RoomMembersProps) {
           {invitable.map((g) => (
             <li key={g.id} className="flex items-center gap-2.5 rounded-lg px-1 py-1.5">
               <span
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06] text-[11px] font-bold text-foreground/40"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-rule text-[11px] font-bold text-ink-2"
                 aria-hidden
               >
                 {g.name.slice(0, 1)}
               </span>
-              <span className="min-w-0 flex-1 truncate text-xs text-foreground/55">{g.name}</span>
+              <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{g.name}</span>
               <button
                 type="button"
                 onClick={() => handleInvite(g)}
                 disabled={busyId === g.id}
-                className="shrink-0 rounded-lg bg-brand/15 px-2 py-1 text-[11px] font-semibold text-brand ring-1 ring-brand/25 transition-colors hover:bg-brand/25 disabled:opacity-40"
+                className="shrink-0 rounded-lg bg-blue-wash px-2 py-1 text-[11px] font-semibold text-blue ring-1 ring-blue/25 transition-colors hover:bg-blue hover:text-card-2 disabled:opacity-40"
               >
                 {busyId === g.id ? '초대 중' : '초대'}
               </button>
