@@ -22,6 +22,9 @@ export function BudgetGauge() {
 
   const { used, total, resets_at } = aiBudget;
   const resetsAt = formatResetTime(resets_at);
+  // 음수 total에서의 RangeError와 used > total일 때 칸이 넘치는 것을 막는다.
+  const safeTotal = Math.max(total, 0);
+  const safeUsed = Math.min(Math.max(used, 0), safeTotal);
 
   return (
     <div>
@@ -37,10 +40,10 @@ export function BudgetGauge() {
         role="img"
         aria-label={`오늘 AI 호출 ${total}건 중 ${used}건 사용`}
       >
-        {Array.from({ length: total }, (_, i) => (
+        {Array.from({ length: safeTotal }, (_, i) => (
           <span
             key={i}
-            className={`h-4 flex-1 rounded-[2px] ${i < used ? 'bg-blue' : 'bg-rule'}`}
+            className={`h-4 flex-1 rounded-[2px] ${i < safeUsed ? 'bg-blue' : 'bg-rule'}`}
           />
         ))}
       </div>

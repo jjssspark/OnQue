@@ -39,7 +39,7 @@ export function FilterBar({ counts, value, onChange }: Props) {
             {/* 숫자는 mono. 버튼 폭이 숫자 자릿수에 따라 덜 흔들린다 */}
             <span
               className={`font-mono text-[11px] tabular-nums ${
-                active ? 'text-card-2/80' : 'text-ink-3'
+                active ? 'text-blue-wash' : 'text-ink-3'
               }`}
             >
               {counts[key]}
