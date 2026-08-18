@@ -18,7 +18,7 @@ export function AuthLayout({ title, subtitle, children, footer }: AuthLayoutProp
 
       <div className="relative w-full max-w-sm">
         <Link href="/" className="text-3xl font-bold text-card-2">
-          On<span className="text-blue">Que</span>
+          On<span className="text-blue-wash">Que</span>
         </Link>
         <p className="mt-2 font-mono text-xs uppercase tracking-widest text-paper/60">
           AI Agent Workspace

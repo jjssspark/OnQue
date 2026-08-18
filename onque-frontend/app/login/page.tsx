@@ -34,7 +34,7 @@ export default function LoginPage() {
       footer={
         <p className="text-xs text-paper/60">
           계정이 없으신가요?{' '}
-          <Link href="/signup" className="font-semibold text-blue">
+          <Link href="/signup" className="font-semibold text-blue-wash">
             회원가입
           </Link>
         </p>
@@ -57,7 +57,7 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
           className="w-full rounded-lg border border-paper/10 bg-paper/5 px-3 py-2.5 text-sm text-card-2 placeholder:text-paper/60 focus:border-blue focus:outline-none"
         />
-        {error && <p className="text-xs text-late">{error}</p>}
+        {error && <p className="text-xs text-late-wash">{error}</p>}
         <button
           type="submit"
           disabled={submitting}

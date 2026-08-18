@@ -23,7 +23,7 @@ function SplashScreen() {
       />
       <div className="relative flex flex-col items-center gap-5 [animation:splash-in_0.5s_ease-out]">
         <p className="text-3xl font-bold text-card-2">
-          On<span className="text-blue">Que</span>
+          On<span className="text-blue-wash">Que</span>
         </p>
         <div className="flex gap-1.5">
           <span className="h-2 w-2 animate-bounce rounded-full bg-blue [animation-delay:-0.3s]" />

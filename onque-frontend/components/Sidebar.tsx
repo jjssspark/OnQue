@@ -21,7 +21,7 @@ export function Sidebar() {
           Workspace
         </p>
         <h1 className="mt-1 text-xl font-bold text-card-2">
-          On<span className="text-blue">Que</span>
+          On<span className="text-blue-wash">Que</span>
         </h1>
       </div>
 
@@ -53,7 +53,7 @@ export function Sidebar() {
               href={item.href}
               className={`group flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors ${
                 isActive
-                  ? 'bg-paper/10 text-card-2'
+                  ? 'bg-paper/40 text-card-2'
                   : 'text-paper hover:bg-paper/5 hover:text-card-2'
               }`}
             >
@@ -65,7 +65,7 @@ export function Sidebar() {
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 className={`mt-0.5 h-5 w-5 shrink-0 ${
-                  isActive ? 'text-blue' : 'text-paper/70 group-hover:text-card-2'
+                  isActive ? 'text-blue-wash' : 'text-paper/70 group-hover:text-card-2'
                 }`}
               >
                 {item.icon}

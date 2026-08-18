@@ -23,7 +23,7 @@ export function MobileNav() {
     <div className="md:hidden sticky top-0 z-10 bg-navy text-paper">
       <div className="flex items-center justify-between gap-3 border-b border-paper/10 px-4 py-3">
         <h1 className="text-lg font-bold text-card-2">
-          On<span className="text-blue">Que</span>
+          On<span className="text-blue-wash">Que</span>
         </h1>
 
         <button
@@ -84,7 +84,7 @@ export function MobileNav() {
             href={item.href}
             className={`shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
               isNavItemActive(item.href, pathname)
-                ? 'bg-paper/10 text-card-2'
+                ? 'bg-paper/40 text-card-2'
                 : 'text-paper/70 hover:bg-paper/5 hover:text-card-2'
             }`}
           >
