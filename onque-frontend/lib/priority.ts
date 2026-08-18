@@ -30,6 +30,12 @@ export type PriorityItem = {
   createdAt: string;
   /** 약속만 가진다. 화면에 "아직 확정 안 됨"을 표시할지 판단한다. */
   isUnconfirmed: boolean;
+  /** 약속만 가진다. 할 일은 근거를 저장하지 않으므로 항상 null.
+   *  빈 문자열과 null을 구분한다 — 전자는 "근거가 비었다", 후자는
+   *  "이 종류에는 근거라는 개념이 없다"이고 화면이 다르게 그려야 한다. */
+  evidence: string | null;
+  clientName: string | null;
+  sourceType: CommitmentRecord['source_type'] | null;
 };
 
 function dayDiff(fromKey: string, toKey: string): number {
@@ -99,6 +105,9 @@ export function buildPriorityStream(
       sourceLabel: `약속 · ${SOURCE_LABEL[c.source_type]}`,
       createdAt: c.created_at,
       isUnconfirmed: c.status === 'proposed',
+      evidence: c.evidence,
+      clientName: c.client_name,
+      sourceType: c.source_type,
     });
   }
 
@@ -115,6 +124,9 @@ export function buildPriorityStream(
       sourceLabel: '할 일',
       createdAt: t.created_at,
       isUnconfirmed: false,
+      evidence: null,
+      clientName: null,
+      sourceType: null,
     });
   }
 

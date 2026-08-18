@@ -128,3 +128,34 @@ describe('buildPriorityStream', () => {
     expect(buildPriorityStream([], [], TODAY)).toEqual([]);
   });
 });
+
+describe('상세 패널용 필드', () => {
+  it('약속은 근거 원문과 고객, 출처를 함께 싣는다', () => {
+    const c = commitment({
+      id: 1,
+      content: '견적서 보내기',
+      evidence: '내일까지 견적서 보내드릴게요',
+      client_name: '한빛상사',
+      source_type: 'chat',
+    });
+
+    const [item] = buildPriorityStream([c], [], TODAY);
+
+    expect(item.evidence).toBe('내일까지 견적서 보내드릴게요');
+    expect(item.clientName).toBe('한빛상사');
+    expect(item.sourceType).toBe('chat');
+  });
+
+  it('할 일은 근거가 없다는 것을 null로 밝힌다', () => {
+    const t = todo({ id: 1, content: '자료 정리' });
+
+    const [item] = buildPriorityStream([], [t], TODAY);
+
+    // 빈 문자열이 아니라 null이어야 한다. ''는 "근거가 비어 있다"로 읽히고
+    // null은 "근거라는 것이 애초에 없다"로 읽힌다. 상세 패널이 이 둘을
+    // 다르게 그려야 한다.
+    expect(item.evidence).toBeNull();
+    expect(item.clientName).toBeNull();
+    expect(item.sourceType).toBeNull();
+  });
+});
