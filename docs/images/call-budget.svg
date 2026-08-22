@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 330" width="900" height="330" role="img" aria-label="하루 20건 AI 호출 예산 배분. 사용자는 20건까지, 스윕은 8건에서 멈추고 남은 12건은 사용자 몫으로 남긴다.">
+  <style>
+    .t  { font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif; }
+    .m  { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    .h1 { font-size: 21px; font-weight: 700; fill: #14202F; }
+    .sub{ font-size: 13px; fill: #4A5A70; }
+    .ax { font-size: 12px; fill: #647389; }
+    .rw { font-size: 15px; font-weight: 600; fill: #14202F; }
+    .in { font-size: 14px; font-weight: 600; fill: #FFFFFF; }
+    .st { font-size: 14px; font-weight: 600; fill: #12376F; }
+    .br { font-size: 14px; font-weight: 600; fill: #14202F; }
+    .bs { font-size: 12.5px; fill: #4A5A70; }
+  </style>
+
+  <rect width="900" height="330" fill="#F7F9FC"/>
+  <rect x="0.5" y="0.5" width="899" height="329" fill="none" stroke="#CFD8E5"/>
+
+  <text class="t h1" x="40" y="46">하루 20건, 누가 어디까지 쓰나</text>
+  <text class="m sub" x="40" y="70">AI_DAILY_TOTAL = 20   ·   AI_BUDGET_RESERVE = 12</text>
+
+  <!-- 눈금 -->
+  <g class="m ax" text-anchor="middle">
+    <text x="140" y="107">0</text>
+    <text x="280" y="107">4</text>
+    <text x="420" y="107">8</text>
+    <text x="560" y="107">12</text>
+    <text x="700" y="107">16</text>
+    <text x="840" y="107">20</text>
+  </g>
+  <g stroke="#B3C0D2" stroke-width="1">
+    <line x1="140" y1="118" x2="840" y2="118"/>
+    <line x1="140" y1="114" x2="140" y2="122"/>
+    <line x1="280" y1="114" x2="280" y2="122"/>
+    <line x1="420" y1="114" x2="420" y2="122"/>
+    <line x1="560" y1="114" x2="560" y2="122"/>
+    <line x1="700" y1="114" x2="700" y2="122"/>
+    <line x1="840" y1="114" x2="840" y2="122"/>
+  </g>
+
+  <!-- 사용자 -->
+  <text class="t rw" x="40" y="167">사용자</text>
+  <rect x="140" y="140" width="700" height="42" fill="#1B4FA8"/>
+  <text class="t in" x="822" y="167" text-anchor="end">20건까지 쓸 수 있음</text>
+
+  <!-- 스윕 -->
+  <text class="t rw" x="40" y="229">스윕</text>
+  <rect x="140" y="202" width="280" height="42" fill="#16294A"/>
+  <rect x="420" y="202" width="420" height="42" fill="#DCE6F6"/>
+  <line x1="420" y1="202" x2="420" y2="244" stroke="#1B4FA8" stroke-width="2"/>
+  <text class="t in" x="158" y="229">8건</text>
+  <text class="t st" x="630" y="229" text-anchor="middle">여기서 멈춤</text>
+
+  <!-- 예비선 -->
+  <g stroke="#1B4FA8" stroke-width="1.5" fill="none">
+    <path d="M420 258 L420 268 L840 268 L840 258"/>
+  </g>
+  <text class="t br" x="630" y="292" text-anchor="middle">예비선 12건</text>
+  <text class="t bs" x="630" y="312" text-anchor="middle">스윕이 못 건드리게 사용자 몫으로 남겨 둔 구간</text>
+</svg>
